@@ -8,13 +8,15 @@ export async function prepareBrowserDatabase(){
  for(const role of ['postgres_runtime','postgres_auth'])await client.query('CREATE ROLE '+role+' LOGIN PASSWORD '+"'"+password+"'"+' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS');
  await client.end();
  const url=(user:string)=>'postgresql://'+user+':'+password+'@127.0.0.1:'+port+'/postgres';
- Object.assign(process.env,{DIRECT_DATABASE_URL:url('qa_owner'),DATABASE_URL:url('postgres_runtime'),DATABASE_URL_RUNTIME:url('postgres_runtime'),DATABASE_URL_AUTH:url('postgres_auth'),BETTER_AUTH_SECRET:randomBytes(32).toString('hex'),BETTER_AUTH_URL:'https://localhost:3219',NVIDIA_API_KEY:'',GROBLE_STARTUP_PAYMENT_URL:'',GROBLE_BUSINESS_PAYMENT_URL:'',BORDERLESS_TRUSTED_IP_HEADER:'x-test-ip'});
+ Object.assign(process.env,{DIRECT_DATABASE_URL:url('qa_owner'),DATABASE_URL:url('postgres_runtime'),DATABASE_URL_RUNTIME:url('postgres_runtime'),DATABASE_URL_AUTH:url('postgres_auth'),BETTER_AUTH_SECRET:randomBytes(32).toString('hex'),BORDERLESS_ADMIN_AUTH_SECRET:randomBytes(32).toString('hex'),BORDERLESS_LOCAL_ADMIN_DEMO:'false',BETTER_AUTH_URL:'https://localhost:3219',NVIDIA_API_KEY:'',GROBLE_STARTUP_PAYMENT_URL:'',GROBLE_BUSINESS_PAYMENT_URL:'',BORDERLESS_TRUSTED_IP_HEADER:'x-test-ip'});
  await (await import('../src/lib/db/migrate')).migrateDatabase();
  const reviewerEmail='qa-reviewer-'+randomUUID()+'@example.com',reviewerPassword=randomBytes(32).toString('base64url');
  const response=await (await import('../src/lib/auth')).getAuth().handler(new Request('https://localhost:3219/api/auth/sign-up/email',{method:'POST',headers:{origin:'https://localhost:3219','Content-Type':'application/json','x-test-ip':'198.18.0.1'},body:JSON.stringify({name:'Synthetic isolated QA reviewer',email:reviewerEmail,password:reviewerPassword})}));
  if(!response.ok)throw new Error('QA reviewer setup failed.');
- const data=await response.json();process.env.BORDERLESS_EXPERT_REVIEWER_IDS=data.user.id;process.env.BORDERLESS_PLATFORM_ADMIN_IDS=data.user.id;
- await writeFile('/tmp/borderless-qa-fixture.json',JSON.stringify({reviewerEmail,reviewerPassword}),{mode:0o600});
+ const data=await response.json();process.env.BORDERLESS_EXPERT_REVIEWER_IDS=data.user.id;process.env.BORDERLESS_PLATFORM_ADMIN_IDS='';
+ const adminLogin='qa-operator-'+randomUUID(),adminPassword=randomBytes(32).toString('base64url')+'!aA9';
+ await (await import('../src/lib/admin/auth')).provisionAdmin({loginId:adminLogin,password:adminPassword,name:'Synthetic isolated QA administrator',demo:false});
+ await writeFile('/tmp/borderless-qa-fixture.json',JSON.stringify({reviewerEmail,reviewerPassword,adminLogin,adminPassword}),{mode:0o600});
  console.info('Isolated browser PostgreSQL ready; synthetic reviewer fixture is private and never production data.');
  return async()=>{await (await import('../src/lib/db')).closePools();await pg.stop();await rm(dir,{recursive:true,force:true});await rm('/tmp/borderless-qa-fixture.json',{force:true});};
 }

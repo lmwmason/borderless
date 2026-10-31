@@ -1,3 +1,13 @@
+# Administrator, contracts and template verification — 2026-10-31
+
+143/143 automated tests passed (no skips) with actual isolated PostgreSQL, restricted runtime/auth roles and additive migrations0018..0024. Production build and typecheck passed. Production-HTTPS browser suite16/16 passed (42.0seconds), including separate administrator UI login/mobile/logout/session loss, templates create/edit/clone/archive, immutable source versions, explicit company reapplication/approval, feature gates, expiry/renewal/data retention, organization suspension/resume, contract suspension/revocation and regular-session revocation. Existing company/marketplace/CRM/pricing regressions passed.
+
+Local demo initialization completed using ignored server-only credentials; no credential values were added to Git or client assets. Production rejects demo creation/login/copied sessions and test-contract rights. Independent RLS tests cover all five contract/template/usage tables, immutable history, cross-org isolation and auth-role denial. Capacity tests serialize simultaneous member/project/Deep additions, retain data when limits shrink and prevent owner plan changes from bypassing an Enterprise contract.
+
+No actual Slack/NVIDIA/payment call, Git push or deployment occurred in this development wave. Earlier evidence follows for historical context.
+
+---
+
 # Approved Slack live integration verification — 2026-10-31
 
 - Existing ignored .env.local webhook configured and validated without printing it. No Slack app/channel/install was created.

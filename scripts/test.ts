@@ -9,7 +9,7 @@ async function main(){
   for(const role of ['postgres_runtime','postgres_auth'])await client.query('CREATE ROLE '+role+' LOGIN PASSWORD '+"'"+password+"'"+' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS');
   await client.end();
   const url=(user:string)=>'postgresql://'+user+':'+password+'@127.0.0.1:'+port+'/postgres';
-  Object.assign(process.env,{DIRECT_DATABASE_URL:url('test_owner'),DATABASE_URL:url('postgres_runtime'),DATABASE_URL_RUNTIME:url('postgres_runtime'),DATABASE_URL_AUTH:url('postgres_auth'),BETTER_AUTH_SECRET:randomBytes(32).toString('hex'),BETTER_AUTH_URL:'http://localhost:3000',NVIDIA_API_KEY:'',SLACK_SALES_WEBHOOK_URL:'',SLACK_SALES_DELIVERY_ENABLED:'false',NODE_ENV:'test',BORDERLESS_TRUSTED_IP_HEADER:'x-test-ip'});
+  Object.assign(process.env,{DIRECT_DATABASE_URL:url('test_owner'),DATABASE_URL:url('postgres_runtime'),DATABASE_URL_RUNTIME:url('postgres_runtime'),DATABASE_URL_AUTH:url('postgres_auth'),BETTER_AUTH_SECRET:randomBytes(32).toString('hex'),BORDERLESS_ADMIN_AUTH_SECRET:randomBytes(32).toString('hex'),BORDERLESS_LOCAL_ADMIN_DEMO:'false',BETTER_AUTH_URL:'http://localhost:3000',NVIDIA_API_KEY:'',SLACK_SALES_WEBHOOK_URL:'',SLACK_SALES_DELIVERY_ENABLED:'false',NODE_ENV:'test',BORDERLESS_TRUSTED_IP_HEADER:'x-test-ip'});
   await (await import('../src/lib/db/migrate')).migrateDatabase();
   const files=[] as string[];
   for(const dir of ['tests','src/lib/legal','src/lib/workspace','src/lib/db'])for(const file of await readdir(dir))if(file.endsWith('.test.ts'))files.push(join(dir,file));

@@ -1,5 +1,15 @@
-import {test,expect} from '@playwright/test';
+import {test,expect,type Page} from '@playwright/test';
 test.use({baseURL:process.env.BORDERLESS_QA_URL||'http://localhost:3217',ignoreHTTPSErrors:true});
+async function isolatedAdminSession(page:Page){
+ const base=process.env.BORDERLESS_QA_URL||'http://localhost:3217',target=new URL(base);
+ test.skip(!['localhost','127.0.0.1'].includes(target.hostname)||target.port!=='3219','Protected admin UI QA requires the explicitly isolated local server3219.');
+ const {readFile,access}=await import('node:fs/promises');let ready=true;try{await access('/tmp/borderless-qa-fixture.json')}catch{ready=false}test.skip(!ready,'Private isolated administrator fixture is required.');
+ const fixture=JSON.parse(await readFile('/tmp/borderless-qa-fixture.json','utf8')) as {adminLogin:string;adminPassword:string};
+ await page.context().setExtraHTTPHeaders({'x-test-ip':'198.19.'+Math.floor(Math.random()*255)+'.'+(1+Math.floor(Math.random()*253))});
+ const response=await page.request.post('/api/admin/login',{headers:{origin:base},data:{loginId:fixture.adminLogin,password:fixture.adminPassword}});expect(response.status()).toBe(200);
+ const session=await (await page.request.get('/api/admin/session')).json();expect(session.user).toBeTruthy();return session;
+}
+
 test('public pricing truthfully disables unconfigured payment links without mutations',async({page})=>{
  const mutations:string[]=[];
  page.on('request',request=>{if(['POST','PUT','PATCH','DELETE'].includes(request.method()))mutations.push(request.url())});
@@ -87,9 +97,10 @@ test('Enterprise introduction inquiry records pending review and never requests 
 });
 
 test('operator inbox clears inquiry details when server permission is lost',async({page})=>{
+ const adminSession=await isolatedAdminSession(page);
  let allowed=true;
  const inquiry={id:'synthetic-qa-inquiry',organizationId:'synthetic-qa-org',companyName:'Synthetic QA Inbox Company',requesterName:'Synthetic QA Requester',requesterEmail:'synthetic-qa-requester@example.com',notes:'Synthetic QA confidential inquiry notes',status:'Pending',createdAt:new Date().toISOString(),reviewedAt:null,reviewNotes:''};
- await page.route('**/api/account',route=>route.fulfill({json:{user:{id:'synthetic-qa-operator',name:'Synthetic QA Operator',email:'synthetic-qa-operator@example.com'},organizations:[],pending:[],platformAdmin:true}}));
+ await page.route('**/api/admin/session',route=>route.fulfill({json:adminSession}));
  await page.route(new RegExp('/api/admin/inquiries(?:[?].*)?$'),route=>allowed?route.fulfill({json:{inquiries:[inquiry]}}):route.fulfill({status:403,json:{error:{code:'PLATFORM_ADMIN_REQUIRED',message:'Explicit platform operator authorization is required.',retryable:false}}}));
  await page.route('**/api/admin/inquiries/'+inquiry.id,route=>route.fulfill({json:{inquiry,notes:[],activity:[],notifications:[]}}));
  await page.goto('/admin/inquiries');
@@ -111,7 +122,7 @@ test('SyntheticQA real Enterprise inquiry reaches only the authorized platform o
  const {readFile,access}=await import('node:fs/promises');
  let ready=true;try{await access('/tmp/borderless-qa-fixture.json')}catch{ready=false}
  test.skip(!ready,'Private isolated QA operator fixture is required.');
- const fixture=JSON.parse(await readFile('/tmp/borderless-qa-fixture.json','utf8')) as {reviewerEmail:string;reviewerPassword:string};
+ const fixture=JSON.parse(await readFile('/tmp/borderless-qa-fixture.json','utf8')) as {reviewerEmail:string;reviewerPassword:string;adminLogin:string;adminPassword:string};
  const marker='SyntheticQA-Inquiry-'+Date.now(),email=marker.toLowerCase()+'@example.com';
  await page.context().setExtraHTTPHeaders({'x-test-ip':'198.19.'+Math.floor(Math.random()*255)+'.'+(1+Math.floor(Math.random()*253))});
  async function call(method:'get'|'post'|'put',path:string,data?:unknown){const response=await page.request[method](path,{headers:{origin:base},...(data===undefined?{}:{data})});expect(response.status()).toBe(200);return response.json()}
@@ -122,10 +133,10 @@ test('SyntheticQA real Enterprise inquiry reaches only the authorized platform o
  await call('post','/api/organizations/'+org.id+'/billing/terms',{termsVersion:current.termsVersion,accepted:true});
  await call('post','/api/organizations/'+org.id+'/billing/enterprise',{notes:marker+' requested enterprise introduction. Synthetic QA, not a contract or order.'});
  expect((await call('get','/api/account')).platformAdmin).not.toBe(true);
- expect((await page.request.get('/api/admin/inquiries')).status()).toBe(403);
+ expect((await page.request.get('/api/admin/inquiries')).status()).toBe(401);
  const operatorContext=await browser.newContext({baseURL:base,ignoreHTTPSErrors:true,extraHTTPHeaders:{origin:base,'x-test-ip':'198.19.'+Math.floor(Math.random()*255)+'.'+(1+Math.floor(Math.random()*253))}});
  try{
-  expect((await operatorContext.request.post('/api/auth/sign-in/email',{data:{email:fixture.reviewerEmail,password:fixture.reviewerPassword}})).status()).toBe(200);
+  expect((await operatorContext.request.post('/api/admin/login',{data:{loginId:fixture.adminLogin,password:fixture.adminPassword}})).status()).toBe(200);
   const operator=await operatorContext.newPage();
   await operator.goto('/admin/inquiries');
   await operator.getByRole('button',{name:marker+' Company',exact:true}).click();
@@ -153,7 +164,7 @@ test('SyntheticQA Enterprise Sales CRM persists assignment, notes and pipeline w
  test.skip(!['localhost','127.0.0.1'].includes(target.hostname)||target.port!=='3219','Real sales CRM QA requires the explicitly isolated local server3219.');
  const {readFile,access}=await import('node:fs/promises');let ready=true;try{await access('/tmp/borderless-qa-fixture.json')}catch{ready=false}
  test.skip(!ready,'Private isolated QA operator fixture is required.');
- const fixture=JSON.parse(await readFile('/tmp/borderless-qa-fixture.json','utf8')) as {reviewerEmail:string;reviewerPassword:string};
+ const fixture=JSON.parse(await readFile('/tmp/borderless-qa-fixture.json','utf8')) as {reviewerEmail:string;reviewerPassword:string;adminLogin:string;adminPassword:string};
  const marker='SyntheticQA-Sales-'+Date.now(),companyName=marker+' Company';
  await page.context().setExtraHTTPHeaders({'x-test-ip':'198.19.'+Math.floor(Math.random()*255)+'.'+(1+Math.floor(Math.random()*253))});
  async function companyCall(method:'get'|'post'|'put',path:string,data?:unknown){const response=await page.request[method](path,{headers:{origin:base},...(data===undefined?{}:{data})});expect(response.status()).toBe(200);return response.json()}
@@ -166,8 +177,8 @@ test('SyntheticQA Enterprise Sales CRM persists assignment, notes and pipeline w
  const inquiryId=submitted.enterpriseRequest.id;
  const context=await browser.newContext({baseURL:base,ignoreHTTPSErrors:true,extraHTTPHeaders:{origin:base,'x-test-ip':'198.19.'+Math.floor(Math.random()*255)+'.'+(1+Math.floor(Math.random()*253))}});
  try{
-  expect((await context.request.post('/api/auth/sign-in/email',{data:{email:fixture.reviewerEmail,password:fixture.reviewerPassword}})).status()).toBe(200);
-  const account=await (await context.request.get('/api/account')).json();expect(account.platformAdmin).toBe(true);
+  expect((await context.request.post('/api/admin/login',{data:{loginId:fixture.adminLogin,password:fixture.adminPassword}})).status()).toBe(200);
+  const account=await (await context.request.get('/api/admin/session')).json();expect(account.user).toBeTruthy();expect(account.user.isDemo).toBe(false);
   const operator=await context.newPage();
   await operator.goto('/admin/inquiries?'+new URLSearchParams({inquiryId}));
   const detail=operator.getByRole('region',{name:'Selected enterprise inquiry',exact:true});

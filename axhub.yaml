@@ -20,3 +20,5 @@ env:
       scope: runtime
     - name: BETTER_AUTH_URL
       scope: runtime
+    - name: BORDERLESS_ADMIN_AUTH_SECRET
+      scope: runtime

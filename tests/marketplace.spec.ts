@@ -114,6 +114,8 @@ test('SyntheticQA expert registration, private catalogue data, scoped company re
   await json(company.request,'post','/api/assessments',{scenarioId:ws.scenarios[0].id},project.id);
   const approved=await json(company.request,'post','/api/documents',{title:approvedTitle,content:marker+' APPROVED SNAPSHOT'},project.id);
   const unapproved=await json(company.request,'post','/api/documents',{title:privateTitle,content:marker+' NEVER SHARED'},project.id);
+  expect([400,403]).toContain((await company.request.get('/api/experts')).status());
+  expect((await page.request.get('/api/experts',{headers:{'x-project-id':project.id}})).status()).toBe(403);
   await openCompanyMarketplace(company,marker);
   await expect(company.locator('.expert-card')).toHaveCount(2);
   await company.getByRole('checkbox',{name:'Compare '+expertName,exact:true}).check();
@@ -135,7 +137,8 @@ test('SyntheticQA expert registration, private catalogue data, scoped company re
   await company.locator('.expert-card').getByRole('button',{name:'View profile and services',exact:false}).click();
   await expect(company.locator('.public-expert-heading .expert-status')).toHaveText('Verified');
   await company.getByRole('button',{name:'Request engagement',exact:true}).click();
-  await company.getByRole('combobox',{name:'Requesting project',exact:true}).selectOption(project.id);
+  await expect(company.getByRole('combobox',{name:'Requesting project',exact:true})).toHaveValue(project.id);
+  await expect(company.getByRole('combobox',{name:'Requesting project',exact:true})).toBeDisabled();
   await company.getByLabel('Request title',{exact:true}).fill(marker+' Engagement');
   await company.getByLabel('Request summary',{exact:true}).fill('SyntheticQA request summary only. No confidential company information or real legal advice.');
   await expect(company.getByRole('checkbox',{name:new RegExp(approvedTitle)})).toBeVisible();
