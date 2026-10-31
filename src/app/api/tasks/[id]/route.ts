@@ -1,0 +1,3 @@
+import {repository} from '@/lib/workspace';import {TaskInputSchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
+export async function PATCH(req:Request,ctx:{params:Promise<{id:string}>}){return handle(async()=>{const body=await readBody(req);TaskInputSchema.partial().parse(body);return repository.updateTask((await ctx.params).id,body);})}
+export async function DELETE(req:Request,ctx:{params:Promise<{id:string}>}){return handle(async()=>{await readBody(new Request(req.url,{method:'POST',headers:req.headers,body:'{}'}));await repository.deleteTask((await ctx.params).id);return {ok:true}})}

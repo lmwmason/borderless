@@ -1,0 +1,36 @@
+# Legal module verification
+
+Official pages retrieved and read on 2026-10-31 using web tools:
+- IRS Effectively connected income: US trade/business and income connection discussion.
+- California SOS Starting a Business: steps 3–5, entity structure, identification, licenses.
+- California SOS Statements of Information: entity filing and changes discussion.
+- California EDD Step 1: Register as an Employer: employee and wage conditions.
+- CPPA FAQ: Who must comply with the CCPA, and California resident scope.
+- CDTFA Sales & Use Tax in California: retail goods, use tax and registration overview.
+
+Verified retrieval evidence (all status: retrieved successfully, content reviewed; date: 2026-10-31):
+- https://www.irs.gov/individuals/international-taxpayers/effectively-connected-income-eci — ECI and US trade or business paragraphs.
+- https://www.sos.ca.gov/business-programs/business-entities/starting-business — Steps 3–5.
+- https://www.sos.ca.gov/business-programs/business-entities/statements — Required statements / information changes.
+- https://edd.ca.gov/en/payroll_taxes/step-1-register-as-an-employer/ — Register as an employer; hiring and wages.
+- https://cppa.ca.gov/faq.html — Who must comply with the CCPA; who has privacy rights.
+- https://cdtfa.ca.gov/taxes-and-fees/sutprograms.htm — Sales/use tax overview and registration.
+
+Exact URLs are also stored in registry.ts. These pages were verified as sources for
+conservative issue screening, not as complete legal authority. Effective dates are
+deliberately omitted where no single applicable date was established. No numeric
+thresholds are encoded; missing payroll wages, global revenue, data volumes,
+entity details and transaction facts require review. The source snapshot expires
+after 90 days and then forces review_required.
+
+SBA registration page timed out and the initial CDTFA technology URL could not be
+retrieved; neither is marked verified or cited. The legacy EDD URL redirected;
+the registry uses the exact retrieved current Step 1 page.
+
+The model may select only curated topics and source IDs. Free-form legal
+conclusions, source URLs and questions with unsupported assertions are never
+applied. Known fact requests are rendered with deterministic wording.
+
+Unit command: rtk proxy npx tsx --test src/lib/legal/*.test.ts
+Real NVIDIA connectivity belongs to the server integration and is not verified
+by these unit tests. No API key was available to this agent.
