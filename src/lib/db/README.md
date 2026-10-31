@@ -6,11 +6,14 @@ the domain API's existing typed documents while project and organization scope,
 foreign keys, indexes and row policies are enforced by PostgreSQL.
 
 Connections are lazy and capped at five per pool:
-- getPool(): DATABASE_URL_RUNTIME, fallback DATABASE_URL.
-- getAuthPool(): DATABASE_URL_AUTH, fallback DATABASE_URL.
+- getPool(): DATABASE_URL_RUNTIME, development-only fallback DATABASE_URL.
+- getAuthPool(): DATABASE_URL_AUTH, development-only fallback DATABASE_URL.
 - getDb(): Drizzle over the runtime pool.
-- migrateDatabase(): DIRECT_DATABASE_URL, fallback DATABASE_URL; one owner/direct
-  connection, serialized by a session advisory lock. No runtime auto-DDL.
+- migrateDatabase(): DIRECT_DATABASE_URL, development-only fallback DATABASE_URL; one owner/direct
+  connection, serialized by a session advisory lock. Production requires the
+  explicit direct URL. Lock waits are capped at 15s and each migration statement
+  at 60s; the dedicated pool and session lock are released on failure/success.
+  No runtime auto-DDL.
 
 Run migrations with the direct owner connection before starting a release.
 The additive migrations create auth, organizational, project payload and deferred
@@ -26,7 +29,7 @@ tables. Both roles must be NOSUPERUSER and NOBYPASSRLS. Keep DIRECT_DATABASE_URL
 out of the web runtime configuration. Never provision either app role as a member
 of the owner role. Other role naming conventions need explicit audited grants.
 
-Eight project payload tables ENABLE and FORCE RLS. Policies require both
+Nine project payload tables ENABLE and FORCE RLS. Policies require both
 borderless.organization_id and borderless.project_id session settings. The
 server must verify membership and permissions first, then set both with
 set_config(...,true) inside the same transaction. Missing scope returns no rows
@@ -68,3 +71,19 @@ Official references checked against installed better-auth 1.7.14:
 - https://better-auth.com/docs/adapters/drizzle
 Installed @better-auth/core db/get-tables.mjs provides the exact native table
 fields; direct pg Pool integration avoids additional schema adapter mappings.
+
+## Stability regression evidence
+
+The real PostgreSQL integration test seeds existing records in every project
+payload table plus an account, a live session, membership, subscription, accepted
+terms and audit log. Two sequential and three simultaneous migration runs must
+preserve row counts and database-computed JSON checksums exactly. Grants, policies
+and the migration journal are compared before/after; the original live session
+must still authenticate. Additional checks exercise restricted-role migration
+failure, advisory lock serialization, cleanup and production direct-URL gating.
+Only synthetic test-owned records are removed during cleanup.
+
+Regulatory Change Impact adds change_impacts using generated migration0003 and
+additive role hardening0004. It shares the same composite project FK, forced RLS
+and scoped runtime CRUD as the other payload tables. Auth has no table access.
+Seeded preservation checks include existing change impact payloads.

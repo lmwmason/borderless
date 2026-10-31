@@ -16,4 +16,4 @@ COPY --from=build --chown=node:node /app/.release/migrate.cjs ./.release/migrate
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 USER node
 EXPOSE 8080
-CMD ["sh", "-c", "node .release/migrate.cjs && exec node server.js"]
+CMD ["sh", "-c", "node .release/migrate.cjs && unset DIRECT_DATABASE_URL DATABASE_URL && exec node server.js"]

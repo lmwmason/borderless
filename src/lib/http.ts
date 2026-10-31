@@ -15,7 +15,9 @@ export async function readBody(request:Request){
   // Next standalone can normalize request.url to its bind address. Host is the
   // HTTP authority sent by the browser; do not trust arbitrary forwarded hosts.
   let sameOrigin=false;
-  try {const parsed=new URL(origin);sameOrigin=['http:','https:'].includes(parsed.protocol) && parsed.host===(request.headers.get('host')||new URL(request.url).host);}catch{}
+  try {const parsed=new URL(origin);sameOrigin=process.env.NODE_ENV==='production'
+   ? Boolean(process.env.BETTER_AUTH_URL)&&parsed.origin===new URL(process.env.BETTER_AUTH_URL!).origin&&parsed.protocol==='https:'
+   : ['http:','https:'].includes(parsed.protocol)&&parsed.host===(request.headers.get('host')||new URL(request.url).host);}catch{}
   if(!sameOrigin)throw new ApiError(403,'ORIGIN','Cross-origin mutation denied.');
  }
  const text=await request.text();if(text.length>64000)throw new ApiError(413,'TOO_LARGE','Request too large.');
