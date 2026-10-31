@@ -144,7 +144,7 @@ test('PostgreSQL migrations, restricted roles, RLS and Better Auth lifecycle',{s
    try{
     await client.query("SELECT pg_advisory_lock(hashtext('borderless_schema_migration'))");
     pending=migrateDatabase().finally(()=>{settled=true;});
-    await new Promise(resolve=>setTimeout(resolve,40));
+    await new Promise(resolve=>{ setTimeout(resolve,40); });
     assert.equal(settled,false);
    }finally{
     await client.query("SELECT pg_advisory_unlock(hashtext('borderless_schema_migration'))");client.release();

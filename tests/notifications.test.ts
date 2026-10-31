@@ -143,7 +143,7 @@ test('durable notification outbox uses real PostgreSQL and injected mocks only',
    const adapter:NotificationAdapter={channel:'slack',send:async()=>{if(++calls===5)allEntered();await gate;return {kind:'sent'};}};
    const running=processNotifications({adapter,testOnly:true,limit:10});
    try{
-    await Promise.race([entered,new Promise((_resolve,reject)=>setTimeout(()=>reject(new Error('Batch was sequential')),500))]);
+    await Promise.race([entered,new Promise((_resolve,reject)=>{ setTimeout(()=>reject(new Error('Batch was sequential')),500); })]);
     assert.equal(calls,5);const leases=(await owner.query('SELECT lease_expires_at FROM notification_outbox WHERE id=ANY($1)',[created.map(item=>item.id)])).rows;
     assert.ok(leases.every(lease=>new Date(lease.lease_expires_at).getTime()>Date.now()));
    }finally{release();}

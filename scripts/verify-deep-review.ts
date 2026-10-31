@@ -25,7 +25,7 @@ async function main(){
   if(!observed.length||JSON.stringify(state)!==JSON.stringify(observed.at(-1))){observed.push(state);console.log(JSON.stringify({event:'deep_review_progress',...state}));}
   if(!['queued','running'].includes(job.status))break;
   if(Date.now()-started>125000)throw new Error('Review exceeded verification safety deadline.');
-  await new Promise(resolve=>setTimeout(resolve,1000));
+  await new Promise(resolve=>{ setTimeout(resolve,1000); });
  }
  const stored=await repo.getReviewJob(job.id);const verified=stored.result?.modelStatus==='available'&&stored.completedTopics.length>0;
  const report={verified,modelId:stored.result?.modelId,acknowledgementMs,elapsedMs:Date.now()-started,observed,finalStatus:stored.status,partial:stored.result?.partial,completedTopics:stored.completedTopics.length,findings:stored.result?.findings.length??0,metrics:stored.result?.metrics,persisted:JSON.stringify(stored)===JSON.stringify(job)};

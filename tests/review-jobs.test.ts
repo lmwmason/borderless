@@ -13,7 +13,7 @@ async function setup(run:(repo:ReturnType<typeof createRepository>,id:string)=>P
 const output={sourceIds:[],questions:[],childTopics:[],telemetry:{latencyMs:1,promptTokens:10,completionTokens:2,totalTokens:12}};
 test('Quick result and queued acknowledgement are available while Deep model remains blocked',async()=>setup(async(repo,id)=>{
  let release!:()=>void,started!:()=>void;
- const entered=new Promise<void>(r=>started=r),gate=new Promise<void>(r=>release=r);let calls=0;
+ const entered=new Promise<void>(r=>{ started=r; }),gate=new Promise<void>(r=>{ release=r; });let calls=0;
  const model:LegalModel=async()=>{calls++;started();await gate;return output;};
  const service=createReviewService(repo,model,()=>true);
  const quick=await quickAssess(company,id);await repo.saveAssessment(quick,company);
@@ -28,7 +28,7 @@ test('Quick result and queued acknowledgement are available while Deep model rem
  assert.equal((await repo.getWorkspace()).assessments.filter(a=>a.id===final.assessmentId).length,1);
 }));
 test('Deep progress survives refresh, cancellation aborts provider and retains linked tasks',async()=>setup(async(repo,id)=>{
- let secondStarted!:()=>void;const second=new Promise<void>(r=>secondStarted=r);let calls=0,aborted=false;
+ let secondStarted!:()=>void;const second=new Promise<void>(r=>{ secondStarted=r; });let calls=0,aborted=false;
  const model:LegalModel=async(_input,signal)=>{
   calls++;if(calls===1)return output;
   secondStarted();return new Promise((_resolve,reject)=>{signal?.addEventListener('abort',()=>{aborted=true;reject(new DOMException('Cancelled','AbortError'))},{once:true});});
@@ -52,7 +52,7 @@ test('outage preserves validated results and missing key or consent never starts
  assert.ok(!JSON.stringify(final).includes('private upstream'));
 }));
 test('changed facts interrupt Deep job and stale results cannot overwrite new facts',async()=>setup(async(repo,id)=>{
- let entered!:()=>void,release!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+ let entered!:()=>void,release!:()=>void;const started=new Promise<void>(r=>{ entered=r; }),gate=new Promise<void>(r=>{ release=r; });
  const service=createReviewService(repo,async()=>{entered();await gate;return output;},()=>true);
  const job=await service.start(id,true);await started;
  await repo.updateScenario(id,{company:{...company,usEmployees:1}});
@@ -60,7 +60,7 @@ test('changed facts interrupt Deep job and stale results cannot overwrite new fa
  assert.ok(final.result?.findings.some(f=>f.summary.includes('Facts changed')));
 }));
 test('new worker recovers unfinished jobs as interrupted and retains saved progress',async()=>setup(async(repo,id)=>{
- let started!:()=>void;const entered=new Promise<void>(r=>started=r);
+ let started!:()=>void;const entered=new Promise<void>(r=>{ started=r; });
  const service=createReviewService(repo,(_input,signal)=>new Promise((_resolve,reject)=>{started();signal?.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true});}),()=>true);
  const job=await service.start(id,true);await entered;
  const replacement=createReviewService(repo,async()=>output,()=>true);await replacement.recover();

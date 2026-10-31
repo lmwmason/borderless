@@ -11,7 +11,7 @@ async function main(){
   const upstream=request({hostname:'127.0.0.1',port:3218,path:req.url,method:req.method,headers:req.headers},response=>{res.writeHead(response.statusCode||502,response.headers);response.pipe(res);});
   upstream.on('error',()=>{res.writeHead(502);res.end('Local server starting.');});req.pipe(upstream);
  });
- await new Promise<void>(resolve=>proxy.listen(3219,'localhost',()=>resolve()));
+ await new Promise<void>(resolve=>{ proxy.listen(3219,'localhost',()=>resolve()); });
  console.info('Local production TLS smoke ready at https://localhost:3219; inference disabled.');
  const stop=async()=>{server.kill('SIGTERM');proxy.close();await rm(dir,{recursive:true,force:true});if(cleanupDatabase)await cleanupDatabase();};
  process.once('SIGINT',()=>void stop());process.once('SIGTERM',()=>void stop());server.on('exit',()=>proxy.close());

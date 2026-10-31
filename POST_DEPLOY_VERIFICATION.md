@@ -131,9 +131,10 @@ must leave paid entitlement Pending: server-verified payment/webhook activation 
 not implemented. SaaS terms, payment and enterprise contracts remain distinct.
 
 On a separate synthetic organization, select Enterprise and submit an introduction
-inquiry. Record its ID and company snapshot. Only users explicitly configured in
-BORDERLESS_PLATFORM_ADMIN_IDS may GET /api/admin/inquiries or review an inquiry.
-Organization Owner/Admin alone must receive 403. Move the test inquiry through
+inquiry. Record its ID and company snapshot. A separately provisioned non-demo administrator must log in through /admin/login
+and obtain the independent administrator session before GET /api/admin/inquiries
+or inquiry review. Ordinary sessions, including Organization Owner/Admin and legacy
+BORDERLESS_PLATFORM_ADMIN_IDS users, must receive401 ADMIN_AUTH_REQUIRED. Move the test inquiry through
 allowed review states; verify this neither activates a subscription nor executes
 an enterprise contract. Never place actual client contact details in QA evidence.
 

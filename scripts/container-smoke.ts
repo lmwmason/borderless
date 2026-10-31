@@ -12,16 +12,16 @@ async function main(){
   const upstream=upstreamRequest({hostname:'127.0.0.1',port:3220,path:req.url,method:req.method,headers:req.headers},response=>{res.writeHead(response.statusCode||502,response.headers);response.pipe(res)});
   upstream.on('error',()=>{res.writeHead(502);res.end()});req.pipe(upstream);
  });
- await new Promise<void>(r=>proxy.listen(3221,'localhost',r));
+ await new Promise<void>(r=>{ proxy.listen(3221,'localhost',r); });
  const api=await playwrightRequest.newContext({baseURL:origin,ignoreHTTPSErrors:true,extraHTTPHeaders:{origin}});
  let child:ReturnType<typeof spawn>|undefined;
  const podman=(args:string[])=>execFileSync('flatpak-spawn',['--host','podman',...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
  async function start(){
   child=spawn('flatpak-spawn',['--host','podman','run','--rm','--name',name,'--network=host','--env-file',envPath,image],{stdio:['ignore','inherit','inherit']});
-  for(let i=0;i<60;i++){const response=await api.get('/api/health').catch(()=>null);if(response?.status()===200)return;await new Promise(r=>setTimeout(r,500));}
+  for(let i=0;i<60;i++){const response=await api.get('/api/health').catch(()=>null);if(response?.status()===200)return;await new Promise(r=>{ setTimeout(r,500); });}
   throw new Error('Container health check failed.');
  }
- async function stop(){if(child){const exited=new Promise<void>(r=>child!.once('exit',()=>r()));podman(['stop','--time','10',name]);await exited;child=undefined;}}
+ async function stop(){if(child){const exited=new Promise<void>(r=>{ child!.once('exit',()=>r()); });podman(['stop','--time','10',name]);await exited;child=undefined;}}
  async function json(path:string,method='GET',body?:unknown,projectId?:string){const response=await api.fetch(path,{method,data:body,headers:projectId?{'x-project-id':projectId}:undefined});if(!response.ok())throw new Error('Container API check failed: '+response.status()+' '+path);return response.json();}
  try{
   await start();

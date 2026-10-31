@@ -1,3 +1,11 @@
+# Approved release attempt — 2026-10-31
+
+The user explicitly approved GitHub publication and first AXHub deployment for this demonstration.154 automated tests,19 clean browser tests, correctness-focused ESLint, TypeScript, production build, complete dependency audit(0vulnerabilities), full-history secret scan and actual final container restart/persistence checks passed. Existing production demo identity rejection remains enforced; remote administrator bootstrap was declined and will not be reported as verified.
+
+The same private lmwmason/borderless master repository is connected to the single AXHub Borderless app. Platform-confirmed origin: https://borderless.the-hackathon-dreamers.axhub.ai. Required server secrets are registered without local database URLs or demo credentials. Automatic Slack delivery remainsfalse. No live payment, customer message or data deletion is authorized. Verify an exact deployment record after publication; a prepared URL and green local checks alone are not deployment success.
+
+---
+
 # Current release gates — 2026-10-31
 
 - Korean/English routes use next-intl with locale cookies and authenticated PostgreSQL preferences. Existing page URLs redirect; API URLs remain unprefixed.

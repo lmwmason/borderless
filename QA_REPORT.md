@@ -1,3 +1,17 @@
+# Release validation and AXHub registration — 2026-10-31
+
+Fresh isolated PostgreSQL automation:154/154 passed,0skips (41.68s after explicit Promise executor corrections). Fresh standalone HTTPS browser suite:19/19 passed in one clean run,0skips (51.0s). TypeScript, production build and a new correctness/security-focused ESLint gate pass. ESLint covers source/scripts/tests without weakening any existing tests;14 promise executors now explicitly discard their unused return values. Dev-tool minimatch is pinned to the patched11.0.1 release; complete npm audit reports0 vulnerabilities.
+
+Full reachable Git history (29commits at initial scan) had one reviewed generic-key false positive: ordinary TEST_PLAN.md prose about hidden session response bodies. Its exact commit/path/rule/line fingerprint is allowlisted in .gitleaksignore; no secret value is allowlisted and no history is rewritten. The rescan reports0leaks. Configured-secret source/client checks are repeated before remote publication.
+
+AXHub login and separate GitHub user link are valid. The existing private GitHub repository lmwmason/borderless and master branch remain the release source; GitHub Actions workflows and repository webhooks were empty before connection. AXHub Borderless app was registered once with GitHub backend, private/team access and XS resources; repository master connection is confirmed, with no deployment yet started at this checkpoint. Only NVIDIA/auth/Slack server secrets were imported by name from ignored .env.local. Local DB URLs and demo credentials were excluded. BETTER_AUTH_URL and BORDERLESS_PUBLIC_URL use the API-confirmed https://borderless.the-hackathon-dreamers.axhub.ai origin. GitHub App installation and repository access are confirmed. Slack automatic delivery is explicitly false, preserving the one-message live-test limit. The final quality-gate image81cbd75888c6 also passed build/start/restart persistence; restricted local synthetic database only.
+
+The user confirmed this is a demonstration deployment and declined production administrator bootstrap. Existing production demo-login rejection remains enforced; no weak administrator was provisioned remotely. Actual hosted administrator access therefore remains unverified. Live NVIDIA and the one approved Slack alert must be verified only after an actual deployment, without live Groble payments or customer messages. App/DB backup restoration, remote data persistence and real hosted egress remain pending deployment evidence.
+
+Earlier local evidence follows. Deployment results, remote commit and any remaining blockers will be recorded after the attempted release.
+
+---
+
 # Korean/English workspace, expert geography and pricing comparison — 2026-10-31
 
 - Automated suite: **154/154 passed**, no skips, actual isolated PostgreSQL with restricted runtime/auth roles. Latest full run40.9seconds. Includes non-destructive repeated migrations0025/0026, owner-only locale preferences, actual account/admin locale HTTP lifecycle, public bilingual portfolio privacy, geographic filters, immutable legal presentation, all shared plan limits/feature flags and existing authentication/company/legal/workflow/contract regressions.

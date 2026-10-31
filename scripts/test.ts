@@ -14,7 +14,7 @@ async function main(){
   const files=[] as string[];
   for(const dir of ['tests','src/lib/legal','src/lib/workspace','src/lib/db'])for(const file of await readdir(dir))if(file.endsWith('.test.ts'))files.push(join(dir,file));
   const child=spawn(process.execPath,['--import','tsx','--test','--test-concurrency=1',...files],{stdio:'inherit',env:process.env});
-  const code=await new Promise<number>(resolve=>child.on('exit',c=>resolve(c??1)));process.exitCode=code;
+  const code=await new Promise<number>(resolve=>{ child.on('exit',c=>resolve(c??1)); });process.exitCode=code;
  }finally{await pg.stop().catch(()=>{});await rm(dir,{recursive:true,force:true});}
 }
 main().catch(()=>{console.error('PostgreSQL test harness failed. Check local binaries and migrations.');process.exitCode=1;});

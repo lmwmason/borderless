@@ -1,0 +1,3 @@
+# Reviewed false positive: prose in TEST_PLAN.md, not an API credential.
+# Exact history fingerprint only; all other findings remain blocking.
+c47dc2a5ad35159afb7cf31512b93745f7e21bea:TEST_PLAN.md:generic-api-key:42
