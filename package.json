@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/test.ts",
     "verify:nvidia": "node --env-file-if-exists=.env.local --import tsx scripts/verify-nvidia.ts",
-    "test:e2e": "playwright test tests/browser.spec.ts --workers=1",
+    "test:e2e": "playwright test tests/browser.spec.ts tests/pricing.spec.ts tests/marketplace.spec.ts --workers=1",
     "db:local": "tsx scripts/db-local.ts",
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts",
     "db:generate": "drizzle-kit generate",
