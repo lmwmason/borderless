@@ -5,3 +5,7 @@ data/
 *.tsbuildinfo
 playwright-report/
 test-results/
+
+.local/
+
+.release/
