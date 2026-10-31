@@ -3,7 +3,7 @@ import {z} from 'zod';
 export const NotificationPayloadSchema=z.object({inquiryId:z.string().min(1).max(160),companyName:z.string().trim().min(1).max(160),inquiryType:z.string().trim().min(1).max(80),createdAt:z.string().datetime({offset:true})}).strict();
 export type NotificationPayload=z.infer<typeof NotificationPayloadSchema>;
 export type ErrorCategory='configuration'|'delivery_disabled'|'rate_limited'|'provider_rejected'|'provider_unavailable'|'network'|'timeout'|'invalid_response'|'invalid_payload'|'lease_expired'|'retry_exhausted';
-export type DeliveryResult={kind:'sent';providerMessageId?:string}|{kind:'disabled';category:ErrorCategory}|{kind:'failed';category:ErrorCategory;retryable:boolean;uncertain:boolean;retryAfterSeconds?:number};
+export type DeliveryResult={kind:'sent';providerMessageId?:string;httpStatus?:number}|{kind:'disabled';category:ErrorCategory}|{kind:'failed';category:ErrorCategory;retryable:boolean;uncertain:boolean;retryAfterSeconds?:number};
 export interface NotificationAdapter<TPayload=NotificationPayload>{channel:string;send(payload:TPayload,options:{signal:AbortSignal}):Promise<DeliveryResult>}
 /** Recipient aliases contain no destination credentials; future adapters resolve them server-side. */
 export type NotificationRoute={event:string;channel:string;recipientAlias:string;enabled:boolean};
@@ -29,14 +29,15 @@ export function publicOrigin(value:string|undefined):string|null{
   return url.origin;
  }catch{return null;}
 }
-export function notificationDeliveryConfigured():boolean{return process.env.NODE_ENV==='production'&&process.env.SLACK_SALES_DELIVERY_ENABLED==='true'&&Boolean(validWebhook(process.env.SLACK_SALES_WEBHOOK_URL))&&Boolean(publicOrigin(process.env.BORDERLESS_PUBLIC_URL));}
+export function notificationDeliveryConfigured():boolean{return process.env.NODE_ENV==='production'&&process.env.SLACK_SALES_DELIVERY_ENABLED==='true'&&Boolean(validWebhook(process.env.SLACK_SALES_WEBHOOK_URL));}
 function cleanLabel(value:string){return value.replace(/https?:\/\/\S+/gi,'[link omitted]').replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g,'[contact omitted]').replace(/[<>]/g,'').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,160);}
-export function slackMessage(payload:NotificationPayload,origin:string){
- const link=origin+'/admin/inquiries?inquiryId='+encodeURIComponent(payload.inquiryId);
+export function slackMessage(payload:NotificationPayload,origin:string|null){
+ const verifiedOrigin=publicOrigin(origin??undefined);
+ const link=verifiedOrigin?verifiedOrigin+'/admin/inquiries?inquiryId='+encodeURIComponent(payload.inquiryId):null;
  return {text:'New Borderless sales inquiry',unfurl_links:false,unfurl_media:false,blocks:[
   {type:'section',text:{type:'plain_text',text:'New sales inquiry'}},
   {type:'section',fields:[{type:'plain_text',text:'Inquiry: '+cleanLabel(payload.inquiryId)},{type:'plain_text',text:'Company: '+cleanLabel(payload.companyName)},{type:'plain_text',text:'Type: '+cleanLabel(payload.inquiryType)},{type:'plain_text',text:'Received: '+payload.createdAt}]},
-  {type:'actions',elements:[{type:'button',text:{type:'plain_text',text:'Open inquiry'},url:link}]}
+  ...(link?[{type:'actions',elements:[{type:'button',text:{type:'plain_text',text:'Open inquiry'},url:link}]}]:[])
  ]};
 }
 export function createSlackAdapter(options:{transport?:NotificationFetch;testOnly?:boolean}={}):NotificationAdapter{
@@ -44,7 +45,7 @@ export function createSlackAdapter(options:{transport?:NotificationFetch;testOnl
  return {channel:'slack',async send(input,{signal}){
   const parsed=NotificationPayloadSchema.safeParse(input);if(!parsed.success)return {kind:'failed',category:'invalid_payload',retryable:false,uncertain:false};
   const webhook=validWebhook(process.env.SLACK_SALES_WEBHOOK_URL),origin=publicOrigin(process.env.BORDERLESS_PUBLIC_URL);
-  if(!webhook||!origin)return {kind:'disabled',category:'configuration'};
+  if(!webhook)return {kind:'disabled',category:'configuration'};
   if(!mocked&&!notificationDeliveryConfigured())return {kind:'disabled',category:'delivery_disabled'};
   const timeout=AbortSignal.timeout(5000),combined=AbortSignal.any([signal,timeout]);
   try{
@@ -57,8 +58,8 @@ export function createSlackAdapter(options:{transport?:NotificationFetch;testOnl
    if(!response.ok)return {kind:'failed',category:'provider_rejected',retryable:false,uncertain:false};
    const text=await response.text();
    if(text.trim()!=='ok')return {kind:'failed',category:'invalid_response',retryable:false,uncertain:true};
-   return {kind:'sent'};
+   return {kind:'sent',httpStatus:response.status};
   }catch{return {kind:'failed',category:timeout.aborted||signal.aborted?'timeout':'network',retryable:true,uncertain:true};}
  }};
 }
-export const categoryMessages:Record<ErrorCategory,string>={configuration:'Slack webhook or public application origin is not configured.',delivery_disabled:'Slack delivery requires explicit production opt-in.',rate_limited:'Slack requested a delivery delay.',provider_rejected:'Slack rejected this request; operator review is required.',provider_unavailable:'Slack is temporarily unavailable; delivery may be uncertain.',network:'A network failure left delivery uncertain.',timeout:'A timeout left delivery uncertain.',invalid_response:'Slack returned an unsupported acknowledgement; delivery is uncertain.',invalid_payload:'The notification payload was invalid.',lease_expired:'The previous worker stopped; delivery may already have occurred.',retry_exhausted:'Automatic retry budget exhausted.'};
+export const categoryMessages:Record<ErrorCategory,string>={configuration:'Slack webhook is not configured.',delivery_disabled:'Slack delivery requires explicit production opt-in.',rate_limited:'Slack requested a delivery delay.',provider_rejected:'Slack rejected this request; operator review is required.',provider_unavailable:'Slack is temporarily unavailable; delivery may be uncertain.',network:'A network failure left delivery uncertain.',timeout:'A timeout left delivery uncertain.',invalid_response:'Slack returned an unsupported acknowledgement; delivery is uncertain.',invalid_payload:'The notification payload was invalid.',lease_expired:'The previous worker stopped; delivery may already have occurred.',retry_exhausted:'Automatic retry budget exhausted.'};

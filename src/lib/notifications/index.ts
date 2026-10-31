@@ -4,13 +4,13 @@ import {getPool} from '../db';
 import {ApiError} from '../http';
 import {limit as limitOperatorAction} from '../organizations';
 import type {AccountUser} from '../organization-contracts';
-import {NotificationPayloadSchema,createSlackAdapter,notificationDeliveryConfigured,validWebhook,publicOrigin,notificationRoutes,categoryMessages,type NotificationAdapter,type NotificationPayload,type DeliveryResult,type ErrorCategory} from './adapter';
+import {NotificationPayloadSchema,createSlackAdapter,notificationDeliveryConfigured,validWebhook,notificationRoutes,categoryMessages,type NotificationAdapter,type NotificationPayload,type DeliveryResult,type ErrorCategory} from './adapter';
 export * from './adapter';
 export const MAX_NOTIFICATION_ATTEMPTS=5;
 export const NOTIFICATION_LEASE_MS=30000;
 const salesRoute=notificationRoutes.find(route=>route.event==='sales.inquiry.created'&&route.enabled)!;
 const EVENT=salesRoute.event,CHANNEL=salesRoute.channel;
-const disabledCategory=():ErrorCategory=>validWebhook(process.env.SLACK_SALES_WEBHOOK_URL)&&publicOrigin(process.env.BORDERLESS_PUBLIC_URL)?'delivery_disabled':'configuration';
+const disabledCategory=():ErrorCategory=>validWebhook(process.env.SLACK_SALES_WEBHOOK_URL)?'delivery_disabled':'configuration';
 export type NotificationStatus='Pending'|'Sent'|'Failed'|'Retry Scheduled'|'Disabled';
 type Row={id:string;aggregate_id:string;event:string;channel:string;status:NotificationStatus;attempts:number;next_attempt_at:Date|null;lease_token:string|null;lease_expires_at:Date|null;error_category:ErrorCategory|null;uncertain:boolean;provider_message_id:string|null;created_at:Date;updated_at:Date;sent_at:Date|null;payload:NotificationPayload};
 const iso=(value:unknown)=>value?new Date(value as string|Date).toISOString():null;
@@ -35,7 +35,7 @@ export async function enqueueNotification(client:Pick<PoolClient,'query'>,input:
   if(!existing)throw new Error('Notification deduplication failed.');return existing.id;
  }finally{await client.query("SELECT set_config('borderless.notification_worker',$1,true)",[previous]);}
 }
-export type ProcessNotificationOptions={adapter?:NotificationAdapter;testOnly?:boolean;limit?:number;now?:()=>Date;timeoutMs?:number};
+export type ProcessNotificationOptions={adapter?:NotificationAdapter;testOnly?:boolean;limit?:number;now?:()=>Date;timeoutMs?:number;notificationIds?:string[]};
 function testAdapter(options:ProcessNotificationOptions){return options.testOnly===true&&Boolean(options.adapter)&&process.env.NODE_ENV!=='production';}
 function boundedSend(adapter:NotificationAdapter,payload:NotificationPayload,timeoutMs:number):Promise<DeliveryResult>{
  const controller=new AbortController();
@@ -47,19 +47,21 @@ function boundedSend(adapter:NotificationAdapter,payload:NotificationPayload,tim
  });
 }
 export async function processNotifications(options:ProcessNotificationOptions={}){
+ const scope=options.notificationIds??null;
+ if(scope&&(!scope.length||scope.length>5||scope.some(id=>typeof id!=='string'||!id.length||id.length>160)))throw new ApiError(400,'VALIDATION','Select between one and five valid notification identifiers.');
  const now=()=>options.now?.()??new Date(),stats={processed:0,sent:0,failed:0,retryScheduled:0,disabled:0,recovered:0};
  const allowed=testAdapter(options)||notificationDeliveryConfigured();
  const limit=Math.min(5,Math.max(1,Math.floor(options.limit??1))),adapter=testAdapter(options)?options.adapter!:createSlackAdapter();
  const claimed=await workerTransaction(async client=>{
   const at=now();
-  const recovered=await client.query("UPDATE notification_outbox SET status=CASE WHEN attempts>=$1 THEN 'Failed' ELSE 'Retry Scheduled' END,error_category='lease_expired',uncertain=true,next_attempt_at=$2,lease_token=NULL,lease_expires_at=NULL,updated_at=$2 WHERE lease_token IS NOT NULL AND lease_expires_at<=$2 AND status IN ('Pending','Retry Scheduled')",[MAX_NOTIFICATION_ATTEMPTS,at]);stats.recovered=recovered.rowCount??0;
-  if(!allowed){const disabled=await client.query("UPDATE notification_outbox SET status='Disabled',error_category=$3,updated_at=$1 WHERE channel=$2 AND status IN ('Pending','Retry Scheduled') AND lease_token IS NULL",[at,CHANNEL,disabledCategory()]);stats.disabled=disabled.rowCount??0;return [] as Row[];}
+  const recovered=await client.query("UPDATE notification_outbox SET status=CASE WHEN attempts>=$1 THEN 'Failed' ELSE 'Retry Scheduled' END,error_category='lease_expired',uncertain=true,next_attempt_at=$2,lease_token=NULL,lease_expires_at=NULL,updated_at=$2 WHERE lease_token IS NOT NULL AND lease_expires_at<=$2 AND status IN ('Pending','Retry Scheduled') AND ($3::text[] IS NULL OR id=ANY($3))",[MAX_NOTIFICATION_ATTEMPTS,at,scope]);stats.recovered=recovered.rowCount??0;
+  if(!allowed){const disabled=await client.query("UPDATE notification_outbox SET status='Disabled',error_category=$3,updated_at=$1 WHERE channel=$2 AND status IN ('Pending','Retry Scheduled') AND lease_token IS NULL AND ($4::text[] IS NULL OR id=ANY($4))",[at,CHANNEL,disabledCategory(),scope]);stats.disabled=disabled.rowCount??0;return [] as Row[];}
   // Slack Retry-After applies to the destination, not just one inquiry.
   // Persisted rate-limit rows keep every worker off this channel until due.
   const cooling=(await client.query("SELECT 1 FROM notification_outbox WHERE channel=$1 AND status IN ('Pending','Retry Scheduled','Failed') AND error_category='rate_limited' AND next_attempt_at>$2 LIMIT 1",[CHANNEL,at])).rowCount;
   if(cooling)return [] as Row[];
-  await client.query("UPDATE notification_outbox SET status='Failed',error_category='retry_exhausted',updated_at=$1 WHERE channel=$2 AND status IN ('Pending','Retry Scheduled') AND attempts>=$3 AND lease_token IS NULL",[at,CHANNEL,MAX_NOTIFICATION_ATTEMPTS]);
-  const rows=(await client.query("SELECT * FROM notification_outbox WHERE channel=$1 AND status IN ('Pending','Retry Scheduled') AND lease_token IS NULL AND next_attempt_at<=$2 AND attempts<$3 ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $4",[CHANNEL,at,MAX_NOTIFICATION_ATTEMPTS,limit])).rows as Row[];
+  await client.query("UPDATE notification_outbox SET status='Failed',error_category='retry_exhausted',updated_at=$1 WHERE channel=$2 AND status IN ('Pending','Retry Scheduled') AND attempts>=$3 AND lease_token IS NULL AND ($4::text[] IS NULL OR id=ANY($4))",[at,CHANNEL,MAX_NOTIFICATION_ATTEMPTS,scope]);
+  const rows=(await client.query("SELECT * FROM notification_outbox WHERE channel=$1 AND status IN ('Pending','Retry Scheduled') AND lease_token IS NULL AND next_attempt_at<=$2 AND attempts<$3 AND ($5::text[] IS NULL OR id=ANY($5)) ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $4",[CHANNEL,at,MAX_NOTIFICATION_ATTEMPTS,limit,scope])).rows as Row[];
   for(const row of rows){row.lease_token=randomUUID();row.attempts++;
    await client.query("UPDATE notification_outbox SET status='Pending',attempts=$1,lease_token=$2,lease_expires_at=$3,updated_at=$4 WHERE id=$5",[row.attempts,row.lease_token,new Date(at.getTime()+NOTIFICATION_LEASE_MS),at,row.id]);
   }

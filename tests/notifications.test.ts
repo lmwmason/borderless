@@ -5,7 +5,7 @@ import {Pool} from 'pg';
 import {getPool} from '../src/lib/db';
 import {ApiError} from '../src/lib/http';
 import {register} from './helpers';
-import {createSlackAdapter,validWebhook,publicOrigin,enqueueNotification,processNotifications,retryNotification,MAX_NOTIFICATION_ATTEMPTS,type NotificationAdapter,type NotificationPayload} from '../src/lib/notifications';
+import {createSlackAdapter,validWebhook,publicOrigin,notificationDeliveryConfigured,enqueueNotification,processNotifications,retryNotification,MAX_NOTIFICATION_ATTEMPTS,type NotificationAdapter,type NotificationPayload} from '../src/lib/notifications';
 const payload=(id=randomUUID()):NotificationPayload=>({inquiryId:id,companyName:'Synthetic company',inquiryType:'Enterprise',createdAt:new Date().toISOString()});
 const environment=()=>({webhook:process.env.SLACK_SALES_WEBHOOK_URL,origin:process.env.BORDERLESS_PUBLIC_URL,enabled:process.env.SLACK_SALES_DELIVERY_ENABLED,node:process.env.NODE_ENV});
 function restore(env:ReturnType<typeof environment>){for(const [key,value] of Object.entries({SLACK_SALES_WEBHOOK_URL:env.webhook,BORDERLESS_PUBLIC_URL:env.origin,SLACK_SALES_DELIVERY_ENABLED:env.enabled,NODE_ENV:env.node}))if(value===undefined)Reflect.deleteProperty(process.env,key);else Object.assign(process.env,{[key]:value});}
@@ -21,13 +21,35 @@ test('Slack adapter validates destinations and never performs native delivery in
   await t.test('native adapter remains Disabled despite a synthetic valid URL and enabled flag in tests',async()=>{
    assert.equal((await createSlackAdapter().send(payload(),{signal:new AbortController().signal})).kind,'disabled');assert.equal(nativeCalls,0);
   });
+  await t.test('public application origin is optional for configuration but native sends stay production opt-in',async()=>{
+   try{
+    Object.assign(process.env,{NODE_ENV:'production',SLACK_SALES_DELIVERY_ENABLED:'true'});delete process.env.BORDERLESS_PUBLIC_URL;
+    assert.equal(notificationDeliveryConfigured(),true);
+    process.env.BORDERLESS_PUBLIC_URL='https://localhost';assert.equal(notificationDeliveryConfigured(),true);
+    process.env.SLACK_SALES_DELIVERY_ENABLED='false';assert.equal(notificationDeliveryConfigured(),false);
+    process.env.SLACK_SALES_DELIVERY_ENABLED='true';delete process.env.SLACK_SALES_WEBHOOK_URL;
+    assert.equal(notificationDeliveryConfigured(),false);
+    assert.deepEqual(await createSlackAdapter().send(payload(),{signal:new AbortController().signal}),{kind:'disabled',category:'configuration'});assert.equal(nativeCalls,0);
+   }finally{syntheticConfig();}
+  });
+  await t.test('mocked delivery omits the admin link when the public origin is absent or invalid',async()=>{
+   try{
+    for(const origin of [undefined,'https://localhost','http://127.0.0.1','https://borderless.example.com/subpath']){
+     if(origin===undefined)delete process.env.BORDERLESS_PUBLIC_URL;else process.env.BORDERLESS_PUBLIC_URL=origin;
+     let message:Record<string,any>|undefined;
+     const result=await createSlackAdapter({testOnly:true,transport:async(_url,options)=>{message=JSON.parse(options.body as string);return new Response('ok',{status:200});}}).send(payload(),{signal:new AbortController().signal});
+     assert.equal(result.kind,'sent');assert.ok(message);assert.ok(message.blocks.every((block:{type:string})=>block.type!=='actions'));
+     const body=JSON.stringify(message);assert.ok(!body.includes('Open inquiry'));assert.ok(!body.includes('http://'));assert.ok(!body.includes('https://'));assert.ok(!body.includes('localhost'));assert.equal(nativeCalls,0);
+    }
+   }finally{syntheticConfig();}
+  });
   await t.test('mock transport contains minimal plain text fields and canonical admin link only',async()=>{
    let message:Record<string,any>|undefined;
    const adapter=createSlackAdapter({testOnly:true,transport:async(url,options)=>{
     assert.equal(new URL(url).hostname,'hooks.slack.com');assert.equal(options.redirect,'error');message=JSON.parse(options.body as string);return new Response('ok');
    }});
    const result=await adapter.send({...payload(),companyName:'Acme https://127.0.0.1 contact@example.com <!channel>'},{signal:new AbortController().signal});
-   assert.equal(result.kind,'sent');assert.ok(message);const body=JSON.stringify(message);
+   assert.equal(result.kind,'sent');assert.equal('httpStatus' in result?result.httpStatus:undefined,200);assert.ok(message);const body=JSON.stringify(message);
    assert.ok(!body.includes('127.0.0.1'));assert.ok(!body.includes('contact@example.com'));assert.ok(!body.includes('<!channel>'));
    assert.equal(message.blocks[2].elements[0].url.split('?')[0],'https://borderless.example.com/admin/inquiries');assert.equal(nativeCalls,0);
   });
@@ -126,6 +148,21 @@ test('durable notification outbox uses real PostgreSQL and injected mocks only',
     assert.ok(leases.every(lease=>new Date(lease.lease_expires_at).getTime()>Date.now()));
    }finally{release();}
    assert.equal((await running).sent,5);
+  });
+  await t.test('explicit notification IDs isolate delivery and every maintenance mutation from unrelated queue rows',async()=>{
+   const target=await enqueue(),unrelated=await enqueue(),stale=await enqueue(),exhausted=await enqueue();
+   for(const item of [target,unrelated,stale,exhausted])await ready(item.id);
+   await owner.query('UPDATE notification_outbox SET lease_token=$1,lease_expires_at=$2 WHERE id=$3',[randomUUID(),new Date(now.getTime()-1000),stale.id]);
+   await owner.query('UPDATE notification_outbox SET attempts=$1 WHERE id=$2',[MAX_NOTIFICATION_ATTEMPTS,exhausted.id]);
+   const unrelatedIds=[unrelated.id,stale.id,exhausted.id];
+   const snapshot=async()=>(await owner.query('SELECT * FROM notification_outbox WHERE id=ANY($1) ORDER BY id',[unrelatedIds])).rows;
+   const before=await snapshot(),delivered:string[]=[];
+   const adapter:NotificationAdapter={channel:'slack',send:async item=>{delivered.push(item.inquiryId);return {kind:'sent',httpStatus:200};}};
+   const result=await processNotifications({adapter,testOnly:true,limit:5,now:()=>now,notificationIds:[target.id]});
+   assert.equal(result.sent,1);assert.equal(result.recovered,0);assert.deepEqual(delivered,[target.item.inquiryId]);assert.deepEqual(await snapshot(),before);
+   const disabledTarget=await enqueue();await ready(disabledTarget.id);
+   const disabled=await processNotifications({notificationIds:[disabledTarget.id]});assert.equal(disabled.disabled,1);assert.equal((await row(disabledTarget.id)).status,'Disabled');assert.deepEqual(await snapshot(),before);
+   await assert.rejects(processNotifications({adapter,testOnly:true,notificationIds:[]}),(error:unknown)=>error instanceof ApiError&&error.code==='VALIDATION');assert.deepEqual(await snapshot(),before);assert.deepEqual(delivered,[target.item.inquiryId]);
   });
  }finally{
   restore(env);if(oldAdmins===undefined)delete process.env.BORDERLESS_PLATFORM_ADMIN_IDS;else process.env.BORDERLESS_PLATFORM_ADMIN_IDS=oldAdmins;
