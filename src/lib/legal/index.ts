@@ -10,7 +10,7 @@ export type ModelOutput={sourceIds:string[];questions:string[];childTopics:strin
  review?:{proposedStatus:FindingStatus;missingFacts:string[];counterexampleFactKeys:string[]};
  telemetry?:{latencyMs:number;promptTokens:number|null;completionTokens:number|null;totalTokens:number|null}};
 
-export type LegalModel=(input:ModelInput)=>Promise<ModelOutput>;
+export type LegalModel=(input:ModelInput,signal?:AbortSignal)=>Promise<ModelOutput>;
 export const LIMITS={maxDepth:3,maxNodes:12,maxModelCalls:15,totalTimeoutMs:90000,callTimeoutMs:30000} as const;
 export type AssessOptions={timeoutMs?:number;callTimeoutMs?:number;now?:number};
 const Output=z.object({sourceIds:z.array(z.string()).max(12),questions:z.array(z.string().max(500)).max(12),childTopics:z.array(z.string().max(120)).max(12),
@@ -22,8 +22,8 @@ export function issueFingerprint(topic:string,company:Company):string {
  const facts=Object.fromEntries([...keys].sort().map(k=>[k,company[k as keyof Company]]));
  return createHash('sha256').update(JSON.stringify({topic,facts,version:SOURCE_VERSION})).digest('hex');
 }
-function deadline<T>(p:Promise<T>,ms:number):Promise<T>{
- return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('model_timeout')),ms);p.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
+function deadline<T>(p:Promise<T>,ms:number,onTimeout:()=>void):Promise<T>{
+ return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{onTimeout();reject(new Error('model_timeout'));},ms);p.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
 }
 export async function assess(company:Company,scenarioId:string,model?:LegalModel,options:AssessOptions={}):Promise<Assessment>{
  const started=Date.now(), timeout=Math.max(1,Math.min(options.timeoutMs??LIMITS.totalTimeoutMs,LIMITS.totalTimeoutMs));
@@ -47,10 +47,11 @@ export async function assess(company:Company,scenarioId:string,model?:LegalModel
   for(const key of TOPIC_FACTS[node.topic]??Object.keys(company).filter(k=>!['id','name','updatedAt'].includes(k))){Object.assign(facts,{[key]:company[key as keyof Company]});}
   modelCalls++;
   const callStarted=Date.now();
+  const callAbort=new AbortController();
   let telemetryRecorded=false;
   const current=findings.find(f=>f.topic===node.topic)!;
   try{
-   const output=Output.parse(await deadline(Promise.resolve().then(()=>model({topic:node.topic,facts,sourceIds:TOPIC_SOURCES[node.topic]??[],ruleStatus:current.status,missingFacts:[...current.missingFacts]})),Math.max(1,Math.min(options.callTimeoutMs??LIMITS.callTimeoutMs,LIMITS.callTimeoutMs,timeout-(Date.now()-started)))));
+   const output=Output.parse(await deadline(Promise.resolve().then(()=>model({topic:node.topic,facts,sourceIds:TOPIC_SOURCES[node.topic]??[],ruleStatus:current.status,missingFacts:[...current.missingFacts]},callAbort.signal)),Math.max(1,Math.min(options.callTimeoutMs??LIMITS.callTimeoutMs,LIMITS.callTimeoutMs,timeout-(Date.now()-started))),()=>callAbort.abort()));
    latencyMs+=output.telemetry?.latencyMs??(Date.now()-callStarted);
    for(const key of ['promptTokens','completionTokens','totalTokens'] as const){
     const value=output.telemetry?.[key];

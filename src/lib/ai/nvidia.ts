@@ -13,7 +13,7 @@ const Output=z.object({
 }).strict();
 export function isNvidiaConfigured(){return Boolean(process.env.NVIDIA_API_KEY);}
 const tokenCount=(value:unknown)=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?value:null;
-export async function nvidiaModel(input:ModelInput):Promise<ModelOutput>{
+export async function nvidiaModel(input:ModelInput,signal?:AbortSignal):Promise<ModelOutput>{
  if(!isNvidiaConfigured())throw new Error('NVIDIA unavailable: configure the server API key.');
  const started=Date.now();let status='failed';let usage:{promptTokens:number|null;completionTokens:number|null;totalTokens:number|null}={promptTokens:null,completionTokens:null,totalTokens:null};
  try{
@@ -21,7 +21,7 @@ export async function nvidiaModel(input:ModelInput):Promise<ModelOutput>{
   id:s!.id,agency:s!.agency,title:s!.title,section:s!.excerptOrSection,
   conditions:s!.applicabilityConditions,exceptions:s!.exceptions,requiredFacts:s!.requiredFacts,reviewedAt:s!.reviewedAt
  }));
- const response=await fetch(NVIDIA_BASE_URL+'/chat/completions',{method:'POST',redirect:'error',signal:AbortSignal.timeout(NVIDIA_CALL_TIMEOUT_MS),
+ const response=await fetch(NVIDIA_BASE_URL+'/chat/completions',{method:'POST',redirect:'error',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(NVIDIA_CALL_TIMEOUT_MS)]):AbortSignal.timeout(NVIDIA_CALL_TIMEOUT_MS),
  headers:{Authorization:'Bearer '+process.env.NVIDIA_API_KEY,'Content-Type':'application/json'},
  body:JSON.stringify({
   model:NVIDIA_MODEL,temperature:1,top_p:0.95,max_tokens:4096,stream:false,

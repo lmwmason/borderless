@@ -42,3 +42,12 @@ test('fixed free NVIDIA model enables thinking and records only safe usage metad
  assert.ok(!JSON.stringify(result).includes('private reasoning'));
  }finally{globalThis.fetch=old;if(oldKey===undefined)delete process.env.NVIDIA_API_KEY;else process.env.NVIDIA_API_KEY=oldKey;}
 });
+
+test('total recursive deadline aborts the underlying provider request',async()=>{
+ const {assess}=await import('../src/lib/legal');
+ let aborted=false;
+ const result=await assess({id:'cancel',name:'Cancel test',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()},'cancel',(_input,signal)=>new Promise((_resolve,reject)=>{
+  signal?.addEventListener('abort',()=>{aborted=true;reject(new DOMException('Cancelled','AbortError'))},{once:true});
+ }),{timeoutMs:5});
+ assert.equal(aborted,true);assert.equal(result.partial,true);assert.equal(result.metrics?.modelCalls,1);
+});
