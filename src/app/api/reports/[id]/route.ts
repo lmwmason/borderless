@@ -1,8 +1,8 @@
 import {handle} from '@/lib/http';
-import {repository} from '@/lib/workspace';import {getSource} from '@/lib/legal';
+import {createProjectRepository} from '@/lib/workspace/postgres';import {requireProject} from '@/lib/organizations';import {getSource} from '@/lib/legal';
 export const dynamic='force-dynamic';
 export async function GET(req:Request,ctx:{params:Promise<{id:string}>}){
- const result=await handle(async()=>repository.getAssessment((await ctx.params).id));
+ const result=await handle(async()=>createProjectRepository(await requireProject(req)).getAssessment((await ctx.params).id));
  if(!result.ok)return result;
  const a=await result.json() as import('@/lib/contracts').Assessment;
  if(!a)return Response.json({error:{code:'NOT_FOUND',message:'Assessment not found.',retryable:false}},{status:404});

@@ -1,15 +1,15 @@
 import {randomUUID} from 'node:crypto';
 import type {ReviewJob} from '../contracts';
 import type {WorkspaceRepository} from '../workspace';
-import {repository} from '../workspace';
+import {createProjectRepository,type ProjectScope} from '../workspace/postgres';
 import {assess,type LegalModel} from '../legal';
 import {NVIDIA_MODEL,nvidiaModel,isNvidiaConfigured} from './nvidia';
 import {ApiError} from '../http';
 type Running={controller:AbortController;done?:Promise<void>};
 type State=Map<string,Running>;
 const active=(job:ReviewJob)=>job.status==='queued'||job.status==='running';
-export function createReviewService(repo:WorkspaceRepository,model:LegalModel=nvidiaModel,configured:()=>boolean=isNvidiaConfigured,state:State=new Map()){
- async function recover(){await repo.recoverReviewJobs([...state.keys()]);}
+export function createReviewService(repo:WorkspaceRepository,model:LegalModel=nvidiaModel,configured:()=>boolean=isNvidiaConfigured,state:State=new Map(),canRecover=true){
+ async function recover(){if(canRecover)await repo.recoverReviewJobs([...state.keys()]);}
  async function get(id:string){
   await recover();const job=await repo.getReviewJob(id);
   if(!active(job))state.get(id)?.controller.abort();
@@ -60,4 +60,5 @@ export function createReviewService(repo:WorkspaceRepository,model:LegalModel=nv
 }
 const globals=globalThis as typeof globalThis&{borderlessReviews?:State};
 const state=globals.borderlessReviews??=new Map();
-export const reviewService=createReviewService(repository,nvidiaModel,isNvidiaConfigured,state);
+
+export function projectReviewService(scope:ProjectScope){return createReviewService(createProjectRepository(scope),nvidiaModel,isNvidiaConfigured,state,scope.role!=='Viewer');}

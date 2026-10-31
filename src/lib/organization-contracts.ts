@@ -1,0 +1,11 @@
+export type Plan='Free'|'Startup'|'Business'|'Enterprise';
+export type OrganizationStatus='Draft'|'Active';
+export type Role='Owner'|'Admin'|'Member'|'Viewer'|'Pending';
+export type AccountUser={id:string;name:string;email:string};
+export type OrganizationSummary={id:string;name:string;workspaceId:string;role:Exclude<Role,'Pending'>;status:OrganizationStatus;plan:Plan};
+export type ProjectSummary={id:string;organizationId:string;workspaceId:string;name:string;description:string;createdAt:string;role?:Role};
+export type Membership={id:string;userId:string;name:string;email:string;role:Role};
+export type JoinRequest={id:string;userId:string;name:string;email:string;status:'pending'|'approved'|'rejected';createdAt:string};
+export type InviteSummary={id:string;expiresAt:string;revokedAt:string|null;createdAt:string};
+export type AccountOverview={user:AccountUser|null;organizations:OrganizationSummary[];pending:{organizationId:string;organizationName:string;status:string}[]};
+export type OrganizationDetail={organization:OrganizationSummary;members:Membership[];requests:JoinRequest[];invites:InviteSummary[];projects:ProjectSummary[]};

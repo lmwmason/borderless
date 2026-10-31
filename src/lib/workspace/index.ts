@@ -65,7 +65,11 @@ function invalidate(state: Workspace, scenarioId: string, keys: string[]) {
   }
 }
 /** Single-process, single-workspace demo storage. Not multi-tenant or cross-process safe. */
-export function createRepository(filePath: string): WorkspaceRepository {
+export interface WorkspaceStore {
+ read():Promise<Workspace>;
+ mutate<T>(fn:(state:Workspace)=>T):Promise<T>;
+}
+export function createRepository(filePath: string,store?:WorkspaceStore): WorkspaceRepository {
   const path=resolve(filePath);
   function serialized<T>(operation:()=>Promise<T>):Promise<T> {
     const pending=(queues.get(path)??Promise.resolve()).catch(()=>undefined).then(operation);
@@ -74,6 +78,7 @@ export function createRepository(filePath: string): WorkspaceRepository {
     return pending;
   }
   async function read():Promise<Workspace> {
+    if(store)return store.read();
     try {
       const parsed=JSON.parse(await readFile(path,'utf8')) as Workspace;
       if(!parsed || !Array.isArray(parsed.scenarios) || !Array.isArray(parsed.tasks)
@@ -98,6 +103,7 @@ export function createRepository(filePath: string): WorkspaceRepository {
     }
   }
   function mutate<T>(fn:(state:Workspace)=>T):Promise<T> {
+    if(store)return store.mutate(fn);
     return serialized(async()=>{const state=await read(); const result=fn(state); await write(state); return clone(result);});
   }
   return {
@@ -255,4 +261,3 @@ export function createRepository(filePath: string): WorkspaceRepository {
     }
   };
 }
-export const repository=createRepository(process.env.BORDERLESS_DATA_PATH??'./data/workspace.json');

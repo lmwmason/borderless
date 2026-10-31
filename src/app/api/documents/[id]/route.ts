@@ -1,0 +1,2 @@
+import {requireProject} from '@/lib/organizations';import {deleteDocument} from '@/lib/workspace/postgres';import {handle,readBody} from '@/lib/http';
+export async function DELETE(req:Request,ctx:{params:Promise<{id:string}>}){return handle(async()=>{const scope=await requireProject(req,true);await readBody(new Request(req.url,{method:'DELETE',headers:req.headers,body:'{}'}));await deleteDocument(scope,(await ctx.params).id);return {ok:true};})}

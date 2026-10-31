@@ -1,2 +1,2 @@
-import {repository} from '@/lib/workspace';import {TaskInputSchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
-export async function POST(req:Request){return handle(async()=>repository.createTask(TaskInputSchema.parse(await readBody(req))))}
+import {createProjectRepository} from '@/lib/workspace/postgres';import {requireProject} from '@/lib/organizations';import {TaskInputSchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
+export async function POST(req:Request){return handle(async()=>{const scope=await requireProject(req,true);return createProjectRepository(scope).createTask(TaskInputSchema.parse(await readBody(req)));})}

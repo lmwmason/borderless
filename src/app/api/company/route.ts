@@ -1,2 +1,2 @@
-import {repository} from '@/lib/workspace';import {CompanySchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
-export async function PUT(req:Request){return handle(async()=>repository.saveCompany(CompanySchema.parse(await readBody(req))))}
+import {createProjectRepository} from '@/lib/workspace/postgres';import {requireProject} from '@/lib/organizations';import {CompanySchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
+export async function PUT(req:Request){return handle(async()=>{const scope=await requireProject(req,true);return createProjectRepository(scope).saveCompany(CompanySchema.parse(await readBody(req)));})}

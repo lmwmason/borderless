@@ -4,9 +4,11 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CompanySchema} from '../src/lib/contracts';
+import {ownerProject,scopedRequest,testOrigin} from './helpers';
 import type {Assessment,Company,Scenario,Task,Workspace,ReviewJob} from '../src/lib/contracts';
 const company:Company={id:'qa-company',name:'QA SaaS',homeCountry:'KR',industry:'b2b_saas',targetStates:['California'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()};
-const request=(path:string,method:string,body:unknown,origin?:string)=>new Request('http://localhost'+path,{method,headers:{'Content-Type':'application/json',...(origin?{origin}: {})},body:JSON.stringify(body)});
+let apiCookie='',apiProjectId='';
+const request=(path:string,method='GET',body?:unknown,origin?:string)=>scopedRequest(path,method,apiCookie,apiProjectId,body,origin?{origin}:{});
 const context=(id:string)=>({params:Promise.resolve({id})});
 test('profile schema rejects malformed facts and accepts explicitly unknown values',()=>{
  assert.equal(CompanySchema.safeParse(company).success,true);
@@ -21,6 +23,8 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  process.env.BORDERLESS_DATA_PATH=join(dir,'workspace.json');
  delete process.env.NVIDIA_API_KEY;delete process.env.NVIDIA_MODEL;
  try {
+ const owner=await ownerProject('api');
+ apiCookie=owner.cookie;apiProjectId=owner.project.id;
  const companyRoute=await import('../src/app/api/company/route');
  const workspaceRoute=await import('../src/app/api/workspace/route');
  const scenarioRoute=await import('../src/app/api/scenarios/route');
@@ -28,7 +32,9 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  const assessmentRoute=await import('../src/app/api/assessments/[id]/route');
  const reviewsRoute=await import('../src/app/api/reviews/route');
  const reviewIdRoute=await import('../src/app/api/reviews/[id]/route');
- const {reviewService}=await import('../src/lib/ai/review-jobs');
+ const {projectReviewService}=await import('../src/lib/ai/review-jobs');
+ const {requireProject}=await import('../src/lib/organizations');
+ const reviewService=projectReviewService(await requireProject(request('/api/workspace')));
  const taskRoute=await import('../src/app/api/tasks/route');
  const taskIdRoute=await import('../src/app/api/tasks/[id]/route');
  const sourceRoute=await import('../src/app/api/sources/[id]/route');
@@ -39,10 +45,10 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  assert.equal(bad.status,400);assert.equal((await bad.json()).error.code,'VALIDATION');
  const cross=await companyRoute.PUT(request('/api/company','PUT',company,'https://evil.example'));
  assert.equal(cross.status,403);
- const malformed=await companyRoute.PUT(new Request('http://localhost/api/company',{method:'PUT',body:'{' }));
+ const malformed=await companyRoute.PUT(new Request(testOrigin()+'/api/company',{method:'PUT',headers:{cookie:apiCookie,'x-project-id':apiProjectId},body:'{' }));
  assert.equal(malformed.status,400);
  assert.equal((await companyRoute.PUT(request('/api/company','PUT',company))).status,200);
- let workspace=await (await workspaceRoute.GET()).json() as Workspace;
+ let workspace=await (await workspaceRoute.GET(request('/api/workspace'))).json() as Workspace;
  const scenarioA=workspace.scenarios[0];
  const scenarioB=await (await scenarioRoute.POST(request('/api/scenarios','POST',{name:'California employee',company:{...company,usEmployees:1}}))).json() as Scenario;
  const scenarioC=await (await scenarioRoute.POST(request('/api/scenarios','POST',{name:'US subsidiary',company:{...company,usEntity:true,salesModel:'subsidiary'}}))).json() as Scenario;
@@ -72,7 +78,7 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
   assert.equal(accepted.status,'queued');
   const completed=await reviewService.wait(accepted.id);
   assert.ok(['completed','partial'].includes(completed.status));
-  const polled=await reviewIdRoute.GET(new Request('http://localhost/api/reviews/'+accepted.id),context(accepted.id));
+  const polled=await reviewIdRoute.GET(request('/api/reviews/'+accepted.id),context(accepted.id));
   assert.equal(polled.status,200);assert.equal((await polled.json()).id,accepted.id);
   const modelAssessment=completed.result!;
   assert.ok(modelAssessment);assert.equal(modelAssessment.kind,'deep');
@@ -83,7 +89,7 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  } finally {globalThis.fetch=originalFetch;delete process.env.NVIDIA_API_KEY;}
  const unavailable=await reviewsRoute.POST(request('/api/reviews','POST',{scenarioId:scenarioA.id,consent:true}));
  assert.equal(unavailable.status,503);assert.equal((await unavailable.json()).error.code,'NVIDIA_UNAVAILABLE');
- assert.equal((await reviewIdRoute.GET(new Request('http://localhost/api/reviews/missing'),context('missing'))).status,404);
+ assert.equal((await reviewIdRoute.GET(request('/api/reviews/missing'),context('missing'))).status,404);
  const assessments:Assessment[]=[];
  for(const scenario of [scenarioA,scenarioB,scenarioC]){
   const response=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenario.id}));
@@ -100,32 +106,32 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  assert.notDeepEqual(statuses(assessments[0]),statuses(assessments[1]));
  assert.notDeepEqual(statuses(assessments[0]),statuses(assessments[2]));
  const assessment=assessments[0];
- const fetched=await assessmentRoute.GET(new Request('http://localhost/api/assessments/'+assessment.id),context(assessment.id));
+ const fetched=await assessmentRoute.GET(request('/api/assessments/'+assessment.id),context(assessment.id));
  assert.equal((await fetched.json()).id,assessment.id);
  for(const finding of assessment.findings) for(const sourceId of finding.sourceIds) {
-  const sourceResponse=await sourceRoute.GET(new Request('http://localhost/api/sources/'+sourceId),context(sourceId));
+  const sourceResponse=await sourceRoute.GET(request('/api/sources/'+sourceId),context(sourceId));
   assert.equal(sourceResponse.status,200);
   const source=await sourceResponse.json();
   assert.match(new URL(source.url).hostname,/\.gov$/);
  }
- assert.equal((await sourceRoute.GET(new Request('http://localhost/api/sources/invented'),context('invented'))).status,404);
+ assert.equal((await sourceRoute.GET(request('/api/sources/invented'),context('invented'))).status,404);
  const task=await (await taskRoute.POST(request('/api/tasks','POST',{title:'Review finding',findingId:assessment.findings[0].id,assignee:'COO',notes:'Initial',evidenceRefs:[]}))).json() as Task;
  assert.ok(task.id);
  assert.equal((await taskIdRoute.PATCH(request('/api/tasks/'+task.id,'PATCH',{status:'done'}),context(task.id))).status,200);
  assert.equal((await taskIdRoute.PATCH(request('/api/tasks/'+task.id,'PATCH',{notes:'Reviewed internally'}),context(task.id))).status,200);
- workspace=await (await workspaceRoute.GET()).json() as Workspace;
+ workspace=await (await workspaceRoute.GET(request('/api/workspace'))).json() as Workspace;
  assert.equal(workspace.tasks[0].status,'done');
  assert.equal(workspace.tasks[0].assignee,'COO');
  assert.equal(workspace.tasks[0].notes,'Reviewed internally');
  assert.deepEqual(workspace.assessments.find(a=>a.id===assessment.id)?.findings,assessment.findings);
- const report=await reportRoute.GET(new Request('http://localhost/api/reports/'+assessment.id),context(assessment.id));
+ const report=await reportRoute.GET(request('/api/reports/'+assessment.id),context(assessment.id));
  assert.match(report.headers.get('Content-Type')??'',/text\/markdown/);
  const markdown=await report.text();assert.match(markdown,/Human review required/);assert.match(markdown,/https:\/\//);
- const missingReport=await reportRoute.GET(new Request('http://localhost/api/reports/missing'),context('missing'));
+ const missingReport=await reportRoute.GET(request('/api/reports/missing'),context('missing'));
  assert.equal(missingReport.status,404);assert.equal((await missingReport.json()).error.code,'NOT_FOUND');
  assert.equal((await assessRoute.POST(request('/api/assessments','POST',{scenarioId:'missing'}))).status,404);
- assert.equal((await taskIdRoute.DELETE(new Request('http://localhost/api/tasks/'+task.id,{method:'DELETE'}),context(task.id))).status,200);
- assert.equal((await (await workspaceRoute.GET()).json()).tasks.length,0);
+ assert.equal((await taskIdRoute.DELETE(request('/api/tasks/'+task.id,'DELETE'),context(task.id))).status,200);
+ assert.equal((await (await workspaceRoute.GET(request('/api/workspace'))).json()).tasks.length,0);
  } finally {
  globalThis.fetch=realFetch;
  for(const [key,value] of Object.entries({BORDERLESS_DATA_PATH:oldPath,NVIDIA_API_KEY:oldKey,NVIDIA_MODEL:oldModel}))if(value===undefined)delete process.env[key];else process.env[key]=value;
