@@ -176,6 +176,20 @@
       "when": 1793429636274,
       "tag": "0024_enterprise_template_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793430844861,
+      "tag": "0025_geography_and_language_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793431702016,
+      "tag": "0026_expert_localized_portfolio_privacy",
+      "breakpoints": true
     }
   ]
 }

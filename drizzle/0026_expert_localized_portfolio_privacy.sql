@@ -1,0 +1,12 @@
+-- Private portfolio descriptions remain private in every language, including raw JSON bypass attempts.
+CREATE OR REPLACE VIEW expert_directory WITH (security_barrier=true) AS
+SELECT p.id,p.user_id,p.status,
+ coalesce((SELECT jsonb_object_agg(key,value) FROM jsonb_each(p.public_payload) WHERE key IN ('displayName','photoUrl','bio','specialties','regions','credentialType','licenseIssuer','licenseJurisdiction','licenseNumberPublic','education','experience','affiliation','languages','available','residenceCountry','qualificationCountry','licensedJurisdictions','serviceCountries','consultationModes','originalLanguage')),'{}'::jsonb)
+ || jsonb_build_object('localizedContent',coalesce((SELECT jsonb_object_agg(locale,coalesce((SELECT jsonb_object_agg(key,CASE WHEN key='portfolioDescription' AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p.public_payload->'portfolio')='array' THEN p.public_payload->'portfolio' ELSE '[]'::jsonb END) AS portfolio_item WHERE portfolio_item->>'visibility'='public') THEN to_jsonb(''::text) ELSE value END) FROM jsonb_each(CASE WHEN jsonb_typeof(texts)='object' THEN texts ELSE '{}'::jsonb END) WHERE key IN ('bio','specialtiesDescription','experience','portfolioDescription') AND jsonb_typeof(value)='string'),'{}'::jsonb)) FROM jsonb_each(CASE WHEN jsonb_typeof(p.public_payload->'localizedContent')='object' THEN p.public_payload->'localizedContent' ELSE '{}'::jsonb END) AS content(locale,texts) WHERE locale IN ('en','ko') AND jsonb_typeof(texts)='object'),'{}'::jsonb))
+ || jsonb_build_object('id',p.id,'status',p.status,'visibility',p.visibility,'updatedAt',p.updated_at,
+  'portfolio',coalesce((SELECT jsonb_agg(jsonb_build_object('title',item->'title','url',item->'url','visibility','public')) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p.public_payload->'portfolio')='array' THEN p.public_payload->'portfolio' ELSE '[]'::jsonb END) AS item WHERE item->>'visibility'='public'),'[]'::jsonb),
+  'resume',CASE WHEN p.public_payload->'resume'->>'visibility'='public' THEN jsonb_build_object('text',p.public_payload->'resume'->'text','url',p.public_payload->'resume'->'url','visibility','public') ELSE '{"text":"","url":"","visibility":"private"}'::jsonb END)
+ || CASE WHEN p.public_payload->>'licenseNumberPublic'='true' THEN jsonb_build_object('licenseNumber',p.public_payload->'licenseNumber') ELSE '{}'::jsonb END AS payload
+FROM expert_profiles p
+WHERE p.visibility='public' AND p.status IN ('Pending Verification','Verified') AND p.public_payload IS NOT NULL;
+

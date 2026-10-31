@@ -249,3 +249,7 @@ export const entitlementUsage=pgTable('entitlement_usage',{
  pgPolicy('entitlement_usage_read',{for:'select',to:'public',using:sql`${companyRead(t.organizationId)} or ${contractPlatform} or (${assignedEntitlementRead(t.organizationId)})`}),
  pgPolicy('entitlement_usage_append',{for:'insert',to:'public',withCheck:sql`${companyWrite(t.organizationId)} or ${contractPlatform}`})
 ]).enableRLS();
+
+export const userPreferences=pgTable('user_preferences',{
+ userId:text('user_id').primaryKey().references(()=>authUser.id,{onDelete:'cascade'}),locale:text('locale').notNull(),updatedAt:time('updated_at').notNull().defaultNow()
+},t=>[check('user_preference_locale_check',sql`${t.locale} in ('ko','en')`),pgPolicy('user_preference_owner',{for:'all',to:'public',using:sql`${t.userId}=current_setting('borderless.user_id',true)`,withCheck:sql`${t.userId}=current_setting('borderless.user_id',true)`})]).enableRLS();
