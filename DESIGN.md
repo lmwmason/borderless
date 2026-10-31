@@ -44,3 +44,8 @@ Draft activation steps show canonical terms and explicit payment configuration
 state; no paid-success simulation. Viewer controls are disabled and explained,
 with server authorization authoritative. Quick and Deep results remain separate,
 and every deep topic distinguishes validated completion from rule screening.
+
+## Marketplace and platform sales
+All visible copy remains English, including Custom pricing and Contact sales. /pricing and company onboarding consistently show Free, Startup, Business and Enterprise. Expert profile pages combine a resume and service catalog with explicit self-reported/verified distinctions. Private documents are excluded unless visibility is explicitly public. Company and expert collaboration distinguish AI findings from authored expert opinions.
+
+Platform sales CRM is a separate /admin/inquiries entry point visible only after server-confirmed platform capability. Company project navigation never shows it unconditionally. Dense searchable table, pipeline and assignee filters, detail panel, internal notes, chronological activity and notification status follow existing neutral surfaces. Authorization loss clears cached sensitive details. Sales success copy must not imply activated subscription or executed legal contract.

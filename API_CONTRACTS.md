@@ -60,3 +60,15 @@ ReviewJob statuses queued/running/completed/partial/cancelled/failed/interrupted
 Assessment.kind quick/deep; modelStatus not_requested/pending/available/unavailable.
 Stable partial IDs allow task references to survive progress updates.
 Shared types remain src/lib/contracts.ts and organization-contracts.ts.
+
+## Change impact
+GET /api/impacts; GET /api/impacts/:id; POST /api/impacts/:id/tasks {taskId XOR title,assignee?}; POST /api/impacts/check-sources {}. All require authorized project scope. Changes annotate affected findings and never automatically invoke NVIDIA.
+
+## Experts and engagements
+Session required: GET/PUT /api/experts/me; POST me/submit {}; POST me/services; DELETE me/services/:id. GET /api/experts supports actual directory filters; GET /api/experts/:id is sanitized. POST /api/experts/:id/review is restricted to configured human reviewers.
+GET /api/engagements?projectId; POST /api/engagements; GET /:id; POST /:id/actions; GET /:id/workspace; POST /:id/workspace/entries; PATCH /:id/workspace/entries/:entryId. Company and expert permissions are resolved server-side. Pre-contract collaboration is denied. Revoked/expired expert access fails without disclosing company data.
+
+## Pricing and Enterprise operations
+GET /api/pricing returns canonical public plan prices and configured hosted-link availability. POST /api/organizations/:id/billing/payment-link {plan:Startup|Business} requires Owner/Admin, matching selected plan and current terms. It returns an operator-configured HTTPS Groble link only; no entitlement update occurs. /billing/return always shows verification pending.
+POST billing/enterprise accepts {notes,idempotencyKey?:UUID}; exact duplicate content/key is idempotent, conflicting reuse returns409. Company/requester snapshot is server-derived.
+GET /api/admin/inquiries?status&salesStatus&q&assigneeId returns {inquiries,assignees}; GET /:id returns {inquiry,notes,activity,notifications}; PATCH /:id {salesStatus?,assigneeId?} updates CRM or legacy {status,notes} reviews handling; POST /:id/notes {body}; POST /:id/notifications/:notificationId/retry {}. Every admin endpoint verifies a real session plus separate platform operator authorization. Won/Closed/Approved do not execute contracts or grant Enterprise access.

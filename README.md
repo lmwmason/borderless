@@ -45,7 +45,7 @@ Run one app instance until job execution has a distributed lease/worker queue.
 - npm run test:e2e uses BORDERLESS_QA_URL and a prestarted server; browser tests
   perform real authentication and Free organization/project onboarding.
 - Local production HTTPS smoke: node --env-file=.env.local --import tsx
-  scripts/smoke-server.ts → https://localhost:3219 (self-signed; inference disabled).
+  scripts/smoke-server.ts --isolated → https://localhost:3219 (self-signed; inference and Slack disabled). This creates a disposable PostgreSQL cluster and a private synthetic reviewer fixture for marketplace/CRM browser QA.
 
 ## Persistence and migration
 
@@ -61,10 +61,15 @@ judgments require review. The Owner must first create/activate the destination.
 
 ## Commercial boundary
 
-Free pilot activation works. Groble checkout and webhook authenticity remain
-unverified: paid checkout is disabled with configuration-needed messaging.
-Enterprise requests are saved Pending; fulfillment/contract signing is not faked.
+Free activation works. Startup is KRW49,000/month, Business KRW149,000/month and Enterprise uses custom pricing. Configured Groble hosted links can be opened after server validation; provider verification and recurring billing remain unimplemented. Payment return parameters never activate access. Enterprise inquiries preserve company/contact snapshots and enter an operator-only sales CRM; Won does not grant access or sign a contract.
 See BILLING.md, QA_REPORT.md and RELEASE_CHECKLIST.md.
 
 No Git push, PR, automatic deployment or AXHub deployment is authorized.
 A later explicit user deployment instruction is required.
+
+## Marketplace, change impacts and sales
+Experts can register independently using the same account as company membership. They manage self-reported profiles, privacy choices and priced services. Explicit human review is required for verification and contract confirmation; approved snapshot sharing and scoped collaboration never grant general company access. Binary uploads and live expert payment/settlement remain deferred.
+
+Regulatory Change Impact records targeted profile/scenario/source revision changes, explains affected prior findings and supports manual reassessment task creation/linking without automatic inference.
+
+/admin/inquiries is available only to accounts provisioned in server-side BORDERLESS_PLATFORM_ADMIN_IDS, independently of company roles. It supports search, assignment, sales stages, internal notes, activity and notification status. SLACK_SALES_WEBHOOK_URL stays secret; SLACK_SALES_DELIVERY_ENABLED defaults off. Native transport is production-only and additionally requires an approved public BORDERLESS_PUBLIC_URL. See SLACK_SETUP.md before any external Slack installation or first send. Local tests never send real Slack messages.

@@ -1,3 +1,22 @@
+# Final local integration verification — 2026-10-31
+
+- Automated PostgreSQL/unit/API/security suite: **126/126 passed**, zero skipped. Original authentication, organization, legal, workflow and billing regressions remain included. Test files run serially because each deliberately changes the trusted global operator configuration against one shared test database; concurrent requests inside individual tests still exercise locking, claims and rate limits.
+- Production HTTPS browser suite: **13/13 passed**, zero skipped, 27.2seconds. Actual isolated PostgreSQL accounts cover company/project, impact tracking, marketplace sharing/contract/revocation, pricing/return, operator access and CRM assignment/notes/search/pipeline. Deep Review transport is explicitly mocked in browser tests. Mobile375px CRM has no document overflow. Screenshots: /tmp/borderless-sales-crm-qa.png and /tmp/borderless-sales-crm-mobile-qa.png. Two initial browser failures were locator scope/label problems; the corrected selectors passed targeted and full reruns without application changes.
+- Typecheck and production build passed. Actual host Podman image build and container stop/start smoke passed; session/company/scenario/task/document data survived. Runtime is nonroot, PID1 lacks owner database credentials and the image contains no env files.
+- Additive migrations preserve seeded records, sessions, terms and audit history through repeated and concurrent runs; runtime/auth grants and forced RLS remain intact.
+- Slack adapter/outbox tests: **14/14 passed**, injected transports only. Covered safe destinations, no native sends in development, minimal payloads, dedupe, concurrent claims, 429 persisted channel cooldown, bounded retries, uncertain-send recovery, timeout abort, inquiry-bound operator retry and batch lease safety. CRM tests verify immutable notes/activity, separate platform role provisioning/revocation audit, exact inquiry/outbox dedupe and transactional rollback. Five concurrent inquiry reviews complete without nested-pool exhaustion.
+- No live Slack message, app/channel creation, installation or webhook provisioning occurred. CLI4.12.0 shows a workspace developer session; direct API auth returned not_authed and app inventory requires a Slack project. Bot/app/channel permissions remain unverified.
+- One actual NVIDIA synthetic Deep Review acknowledged in39ms, progressively persisted0→6 completed topics and12 findings, then returned truthful partial status at90,816ms. Seven model attempts; aggregate token usage unknown after deadline. This proves progressive partial persistence, not a complete legal review.
+- Dependency audit: zero production vulnerabilities. Configured secret values absent from unignored source; env/local data remain ignored. Temporary fixture credentials and container env files are removed after QA.
+
+## Remaining boundaries
+Slack live installation, webhook and public-domain/egress verification require approval. Default delivery is disabled; the in-process worker polls durable PostgreSQL jobs and does not guarantee exactly-once delivery. Other event recipients are reserved/disabled; email is deferred. Platform operators must be explicitly provisioned in server configuration.
+Groble links do not authenticate settlement; real paid activation and professional fee collection remain deferred. Expert credential/contract review is a manual, attested operator process; no real professional credential was verified by synthetic tests. Binary uploads and account-recovery email remain deferred. AXHub managed runtime, backup restoration and outbound connectivity remain unverified until approved deployment.
+
+Git push, remote deployment, actual payments and external Slack mutations were not performed. Feature commits: abb6efe (expert backend), 2be27ff (impact API regression), 9284d19 (sales/notification backend), 8edd493 (integrated UI). Release documentation and smoke tools are committed separately. Earlier baseline evidence follows for traceability; the counts above supersede it.
+
+---
+
 # Local QA report
 
 No Git push, remote deployment, or live payment was performed by QA.

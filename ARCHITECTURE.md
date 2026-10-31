@@ -70,3 +70,10 @@ distributed workers and binary document upload remain later work.
 Local implementation/testing/commits are authorized. Git push, PR/publication,
 automatic deployments and actual AXHub deployment require subsequent explicit
 user approval. No remote code transmission is performed during local QA.
+
+## Marketplace, regulatory impacts and sales CRM
+Drizzle migrations add expert_profiles/expert_services, scoped engagements and explicit engagement_resources snapshots, engagement_entries and immutable events. Public directory views project only approved public fields. Transaction-local actor context and FORCE RLS protect private expert and engagement records; experts never gain automatic company membership. Human reviewer access is independently configured by BORDERLESS_EXPERT_REVIEWER_IDS and bound to a review target.
+
+change_impacts retain scope, changed facts/source revision, affected assessment/findings and optional task links. Stored source fingerprints avoid arbitrary model source URLs. Manual source checks compare the actual curated registry; there is no live legal monitoring crawler.
+
+Enterprise CRM preserves legacy inquiry status independently from salesStatus. BORDERLESS_PLATFORM_ADMIN_IDS is a trusted server allowlist, provisioned outside ordinary signup. Durable outbox events use a unique event/channel/aggregate key, leased SKIP LOCKED claims, bounded retry and persisted recovery. Adapter output is sanitized; notification payload excludes inquiry notes, legal analysis and documents. A retry may duplicate a delivery after an ambiguous network failure; exactly-once delivery is not claimed. Native Slack transport requires an explicit production delivery opt-in, never local tests.

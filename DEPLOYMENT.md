@@ -36,7 +36,7 @@ A120s health startup period is declared and locally manifest-validated.
 
 The local production migration bundle has been run idempotently against actual
 PostgreSQL. The app has been smoke-tested as standalone with local HTTPS proxy.
-No Docker/Podman executable was available, so actual image build is unverified.
+Host Podman was accessible through flatpak-spawn despite not being on the sandbox PATH. A real local image build and container stop/start smoke verified unprivileged runtime, removed migration-owner credentials, preserved sessions and company/scenario/task/document data. Final feature validation is recorded in QA_REPORT.md.
 
 ## Runtime secrets and configuration
 
@@ -66,3 +66,10 @@ proxy headers must be validated before setting BORDERLESS_TRUSTED_IP_HEADER.
 Local implementation, testing and local commits only. No remote app creation,
 environment mutation, Git push, preview, staging, release publication or deployment.
 STOP and wait for a subsequent explicit user instruction such as “배포해”.
+
+## Optional sales operations configuration
+BORDERLESS_PLATFORM_ADMIN_IDS is a comma-separated trusted operator account-ID allowlist. Only a trusted server operator may provision it; ordinary signup or company roles cannot grant it. Changes are synchronized into audited operator grant records by the authorized platform service. BORDERLESS_EXPERT_REVIEWER_IDS separately gates human qualification and engagement contract review. Neither value should be guessed from client input.
+
+SLACK_SALES_WEBHOOK_URL is a server secret. Native delivery additionally requires SLACK_SALES_DELIVERY_ENABLED=true and production mode; leave it false until separate Slack approval. BORDERLESS_PUBLIC_URL must be an explicitly confirmed public HTTPS origin before generating sales detail links. No localhost link or private inquiry body is sent. Durable notification jobs recover leases after restart; single-process scheduling is supported and database claims protect concurrent workers. Delivery cannot be exactly once across network ambiguity. See SLACK_SETUP.md for actual CLI observations and approval steps.
+
+No remote environment settings, Slack installation/channel, message or AXHub deployment has been executed. Groble hosted links may be configured using GROBLE_STARTUP_PAYMENT_URL/GROBLE_BUSINESS_PAYMENT_URL; they do not provide verified paid activation.

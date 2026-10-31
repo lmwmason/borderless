@@ -37,3 +37,8 @@ organization, handle expiry/refund/cancel and make entitlement updates idempoten
 payment_events has a unique provider event ID and verified flag but there is no
 public fake-activation webhook endpoint. Enterprise fulfillment and contract review
 are manual/unimplemented, with requests truthfully Pending.
+
+## Canonical prices and hosted links
+Free: KRW0/month; Startup: KRW49,000/month; Business: KRW149,000/month; Enterprise: Custom pricing / Contact sales. These platform subscriptions are independent of expert-set service fees.
+GROBLE_STARTUP_PAYMENT_URL and GROBLE_BUSINESS_PAYMENT_URL optionally supply HTTPS groble.im hosted links; invalid/missing links remain disabled. Links are not an implementation of provider API, recurring billing or authentic webhook reconciliation. /billing/return ignores success/amount/plan query assertions and grants no paid entitlement. Actual verified Groble settlement and subscription activation remain unimplemented pending official merchant contract and credentials.
+Enterprise requests preserve canonical company/requester snapshots, deduplicate submissions and remain pending contract fulfillment. Sales operators can manage pipeline/notes/assignment without changing subscription state. Won is a sales record only. No actual expert payment or platform fee is collected.

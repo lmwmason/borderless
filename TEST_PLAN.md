@@ -32,3 +32,8 @@ and forged browser status cannot activate access; cancelled/expired subscription
 retain SQL records. Test dry-run/nonempty/invalid-reference legacy imports.
 Browser QA must use actual sessions/onboarding and HTTPS production cookies;
 only Deep Review transport may use explicitly identified controlled fixtures.
+
+## Additional regression gates
+Exercise targeted fact/source impacts, unchanged-fact dedupe, manual task links and project RLS; actual PostgreSQL expert profile/private field separation, expert-owned price/catalog, filters, quotation/contract gates, explicit material sharing, unrelated party denial and revoke/expiry.
+Enterprise tests cover exact monthly prices, disabled missing checkout, forged return URLs, immutable snapshots and idempotent inquiry/outbox creation. CRM tests cover separate platform privilege, trusted provisioning audit, assignment, pipeline, notes, chronological audit and no entitlement changes. Notification tests inject controlled adapters only: success, permanent/transient errors, bounded retries, lease recovery, concurrency, missing configuration, payload minimization and uncertain-send duplicate risk. Never send a test message to a real Slack workspace.
+Browser tests exercise real accounts and PostgreSQL for company/project/marketplace/CRM, mobile navigation and controlled Deep Review. Actual NVIDIA timing evidence is collected separately once using synthetic company facts.

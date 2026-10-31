@@ -120,8 +120,9 @@ test('PostgreSQL migrations, restricted roles, RLS and Better Auth lifecycle',{s
    await assert.rejects(getPool().query('UPDATE contract_acceptances SET terms_version=terms_version WHERE id=$1',[marker+'-terms']),(error:unknown)=>(error as {code?:string}).code==='42501');
    await assert.rejects(getPool().query('DELETE FROM audit_logs WHERE id=$1',[marker+'-audit']),(error:unknown)=>(error as {code?:string}).code==='42501');
   });
-  await t.test('failed restricted-role migration releases advisory lock and owner connection',async()=>{
+  await t.test('failed restricted-role migration releases advisory lock and its restricted connection',async()=>{
    const direct=process.env.DIRECT_DATABASE_URL;
+   const failingRole=(await getPool().query('SELECT current_user AS role')).rows[0].role as string;
    try{
     process.env.DIRECT_DATABASE_URL=process.env.DATABASE_URL_RUNTIME;
     await assert.rejects(migrateDatabase(),(error:unknown)=>{const failure=error as {code?:string;cause?:{code?:string}};return failure.code==='42501'||failure.cause?.code==='42501';});
@@ -132,7 +133,9 @@ test('PostgreSQL migrations, restricted roles, RLS and Better Auth lifecycle',{s
     assert.equal(acquired,true);
     if(acquired)await client.query("SELECT pg_advisory_unlock(hashtext('borderless_schema_migration'))");
    }finally{client.release();}
-   assert.equal((await owner.query("SELECT count(*)::int count FROM pg_stat_activity WHERE datname=current_database() AND application_name='borderless-migrate'")).rows[0].count,0);
+   // Other test files may legitimately migrate as owner concurrently. Only
+   // the restricted-role connection created by this fault must be gone.
+   assert.equal((await owner.query("SELECT count(*)::int count FROM pg_stat_activity WHERE datname=current_database() AND application_name='borderless-migrate' AND usename=$1",[failingRole])).rows[0].count,0);
    await migrateDatabase();
   });
   await t.test('session advisory lock serializes migrators and releases after success',async()=>{

@@ -31,7 +31,7 @@ tests use controlled responses and preserve the fixed hosted model configuration
 
 ## Outstanding before commercial release
 
-Docker image build not run (no local container engine). Actual AXHub deployment,
+Local Podman image build and restart persistence smoke have been run; see current QA evidence. Actual AXHub deployment,
 secret injection, egress/resources and managed backup/restore remain unverified.
 Email verification/recovery delivery, distributed workers and binary document
 uploads are deferred. Documents currently support text create/read/delete.
@@ -43,3 +43,13 @@ Pilot terms and consequential legal conclusions need human review.
 
 Git push/PR/publication/automatic deployment/AXHub deployment require a later
 explicit user approval. Completing local checks does not grant that approval.
+
+## Marketplace and sales gates
+- Reviewers and platform sales operators are distinct trusted server capabilities.
+- Expert access requires explicit snapshots, verified credentials, cleared conflicts and human contract confirmation; expiry/revocation deny access.
+- Sales pipeline changes cannot activate subscriptions. Slack delivery is disabled until approved configuration, and tests use controlled transports.
+- Validate managed outbound Slack HTTPS and public domain only after deployment approval. Verify scheduler health and failed/uncertain notification backlog after restart.
+- Confirm organization backup and restore policy with the operator. No real contract, expert license or payment is verified by fixture tests.
+
+## Final local evidence
+126/126 automated tests; 13/13 production-HTTPS browser tests, no skips. Production build and actual Podman image build/restart smoke passed with the final application source. One synthetic NVIDIA Deep Review progressively persisted six topics before truthful90s partial termination. Slack delivery used mocks exclusively. See QA_REPORT.md and POST_DEPLOY_VERIFICATION.md. No push/deployment/external Slack mutation is authorized.
