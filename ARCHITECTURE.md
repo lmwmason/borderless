@@ -1,23 +1,72 @@
-# ARCHITECTURE.md
+# Borderless architecture
 
-## MVP architecture
-Single Next.js TypeScript app with server-side API routes, NVIDIA NIM client, curated legal registry and local persistence adapter. Prefer one container for AXHub; confirm supported runtime from actual AXHub project documentation before writing deployment config. Do not assume any specific YAML schema.
+User Account → Organization → Organization Workspace → Expansion Project →
+Regulatory Matters / Tasks / Scenarios / Documents.
 
-## Pipeline
-Company facts → relevant issue detection → bounded recursive issue queue → retrieve curated official source IDs → rule evaluation → LLM challenge / missing-fact discovery → verified findings → proposed tasks → human review → fact changes → targeted reassessment.
+## Authentication and authorization
 
-## Recursive control
-IssueNode: id, parentId, topic, depth, factKeys, sourceIds. Fingerprint topic + normalized facts + source version. Max depth 3, 12 nodes, 15 model calls, hard request timeout, retry cap. Cache duplicate issues. On timeout, return partial/unknown, never a fabricated conclusion.
+Better Auth handles scrypt password hashing, signup/signin/signout, opaque persisted
+sessions, expiry and revocation. Cookie cache is disabled. Cookies are HttpOnly,
+SameSite=Lax and Secure in production. Production requires an explicit HTTPS
+BETTER_AUTH_URL and server-only high-entropy BETTER_AUTH_SECRET. DB-backed login
+limits are enabled in all environments. Only explicitly configured, proxy-overwritten
+IP headers may be trusted; otherwise the library uses a shared rate-limit bucket.
 
-## Modules
-`src/lib/contracts.ts` shared Zod schemas/types; `src/lib/legal/` registry/rules/recursive engine; `src/lib/ai/nvidia.ts` server-side client; `src/lib/workspace/` storage/events; `src/app/api/` routes; `src/components/` UI.
+Every company/project API resolves a real session, approved membership and project
+from x-project-id. The header is only a lookup identifier, never an authorization
+claim. Owner/Admin manage company membership and billing; Member edits project data;
+Viewer reads only; Pending sees no internal data. Owner cannot be demoted through
+the role API. Admin cannot grant/manage Admin or bypass the Owner.
 
-## Persistence
-Local SQLite if compatible with target AXHub runtime, otherwise JSON for single-user demo only. Abstract repository to replace with PostgreSQL later. Never claim JSON storage is production multi-tenant ready.
+Draft company creation atomically creates an Owner, workspace and Pending Free
+subscription. Free activates after immutable, versioned server-recorded acceptance.
+Paid plans need verified Active/unexpired subscription state; no browser redirect
+or submitted payment status grants access. Enterprise requests stay Pending.
 
-## Security
-NVIDIA key only on server. Validate all model JSON. Use curated source IDs instead of LLM-generated links. No external filing or sending without human confirmation. Minimize personal/company confidential data; do not submit sensitive uploads to external inference without consent.
+## PostgreSQL and migrations
 
+One Next.js Node container on AXHub with managed PostgreSQL. Drizzle owns 25 tables
+and additive journaled migrations. Owner/direct connection runs migrations; runtime
+and auth use distinct limited roles. Runtime cannot read credential/session tables;
+auth cannot read company/project tables. A narrow account_public view supplies
+member display names/emails. Project tables have composite organization/project
+foreign keys plus ENABLE/FORCE RLS with transaction-local settings.
 
-## Future commercial module
-Billing is a provider adapter behind server-side interfaces, with payment event verification and entitlements separated from agreement/contract acceptance. See BILLING.md. Do not couple the legal engine to a payment vendor.
+Company profiles, scenarios, assessments, findings, tasks, review jobs, activity
+and documents are distinct scoped SQL tables with typed JSON payloads. Writes lock
+the project inside a transaction, revalidate membership/entitlement, preserve array
+ordering and append actor-attributed audit records. No runtime JSON fallback exists.
+
+Old JSON is never automatically assigned to the next signup. Owner-scoped legacy
+import defaults to dry-run, requires an empty destination, validates references,
+marks imported legal judgments for review and never rewrites its input file.
+
+## Quick Assessment and Deep Review
+
+Quick returns source-checked deterministic screening without NVIDIA or inference
+consent. Deep is POSTed as a separate persisted job and acknowledged with HTTP 202.
+Validated topic snapshots retain stable finding/assessment IDs and are polled by
+the UI; user can keep working, refresh, switch Quick/Deep views or cancel.
+
+The fixed NVIDIA Nemotron 3.5 model uses thinking. Rules and curated source IDs
+validate each proposal. Limits remain depth3/nodes12/calls15, total90s/call30s.
+AbortSignal propagates cancellation and deadlines to fetch. Unfinished work is
+explicitly partial, with completed topics distinguished from rule-only findings.
+No free-form reasoning, model URLs or credentials are persisted/logged.
+
+Job execution currently uses one long-lived Node process with persisted status.
+Restarted/orphaned work is marked interrupted with saved partial results; it is
+not silently resumed. Run one application instance until a durable leased worker
+queue is implemented. PostgreSQL transaction safety supports concurrent users,
+but this in-process execution mechanism is not a distributed worker queue.
+
+## Deferred and approval gate
+
+Groble checkout/webhook verification and enterprise contract fulfillment need a
+verified provider agreement/integration; no live payments or fake successes.
+Email verification/password recovery delivery, production backup/restore drills,
+distributed workers and binary document upload remain later work.
+
+Local implementation/testing/commits are authorized. Git push, PR/publication,
+automatic deployments and actual AXHub deployment require subsequent explicit
+user approval. No remote code transmission is performed during local QA.

@@ -1,33 +1,68 @@
-# DEPLOYMENT.md — AXHub Only, Final Deployment Once
+# AXHub deployment preparation — no deployment executed
 
-## Non-negotiable
-All implementation and tests happen locally. No staging deploy, no preview deploy, no GitHub auto-deploy trigger. Final deployment to AXHub only after local QA passes.
+## Verified official infrastructure contract
 
-## Preflight, without deploying
-- Obtain current AXHub official documentation and project access.
-- Confirm supported runtime/container build, ingress port, environment variables, persistence, health checks, resource limits and command syntax.
-- Confirm NVIDIA outbound API calls and secret management work on AXHub.
-- Do not invent an `axhub.yaml` schema or CLI commands; follow verified docs.
+https://docs.axhub.ai/ko/docs/features/data and
+https://docs.axhub.ai/llms-deploy.ko.txt were checked on2026-10-31.
 
-## Suggested packaging
-Prefer single Next.js Node container with `GET /api/health`, production build and server-side NVIDIA client. Keep persistence adapter swappable; local JSON is only for demo and may not survive container restarts. Use AXHub-supported persistent storage if available.
+AXHub provides managed standard PostgreSQL through database.engine:postgres.
+The manifest declares roles:[runtime,auth] and owner_bypass_rls:true.
+No external database or local PostgreSQL container/volume fallback is selected.
+Managed DB persistence is independent of the app container; ordinary container
+files are ephemeral and are not used for runtime application data.
 
-## Environment variables
-`NVIDIA_API_KEY` (secret), `NVIDIA_MODEL` (selected from actually accessible catalog), `NVIDIA_BASE_URL` (verified endpoint), `NODE_ENV=production`, storage settings as needed. No secrets in Git.
+Injected connections:
+- DIRECT_DATABASE_URL: owner/migration, session-pool endpoint.
+- DATABASE_URL_RUNTIME: limited app role, transaction-pool endpoint.
+- DATABASE_URL_AUTH: limited identity role, transaction-pool endpoint.
+- DATABASE_URL: platform default owner connection; never used as production
+  runtime/auth fallback in this app.
 
-## Final-only checklist
-1. Local typecheck/tests/build pass.
-2. Real NVIDIA API request verified and budget capped.
-3. Three scenario acceptance tests pass.
-4. Citation registry checked; coverage limitation shown.
-5. Container/build and health endpoint tested locally.
-6. Configure secrets and AXHub runtime using verified docs.
-7. STOP and request explicit user approval. Only after approval, deploy to AXHub and verify URL, health endpoint, onboarding, assessment and task edits.
-8. If deployment fails, debug and repair; log any additional deployment attempt explicitly rather than falsely claiming one successful attempt.
+The platform creates roles but grants no table rights. Our additive migrations
+grant domain access to runtime and private auth tables to auth, with a safe public
+account view. Project tables have composite scope FKs and FORCE RLS. Runtime
+queries set tenant/project context transaction-locally using the same checked-out
+pg client; unnamed parameterized queries avoid prepared-statement pooler issues.
+Pools are limited to5 connections per role as required by the documented limit.
 
+## Container and startup
 
-## Mandatory human approval gate (overrides every conflicting instruction)
-- Implement, test, and create local Git commits autonomously; never `git push`, open a PR, publish a release, enable auto-deploy, or transmit code to a remote repository without explicit user approval.
-- Prepare AXHub configuration and verify documentation locally, but **do not run any AXHub deployment, preview, staging or remote-mutating command** until the user explicitly instructs deployment (e.g. "배포해") in a later message.
-- At the end of local implementation, report completed features, tests, known gaps, commit hashes, secret configuration and AXHub readiness, then **STOP AND WAIT** for approval. The 4-hour deadline does not waive this gate.
-- No commit of `.env`, credentials, customer data, or generated secrets. Preserve pre-existing uncommitted changes; use Conventional Commits after each coherent, tested feature; orchestrator owns commits.
+One Next.js Node container listens on0.0.0.0 and PORT(default8080).
+GET /api/health returns immediately without DB/inference. The Docker build bundles
+a standalone migration executable, excludes all local env/data files and copies
+Drizzle's migration journal. Startup applies non-destructive, advisory-locked
+migrations via direct owner connection before starting the unprivileged web user.
+A120s health startup period is declared and locally manifest-validated.
+
+The local production migration bundle has been run idempotently against actual
+PostgreSQL. The app has been smoke-tested as standalone with local HTTPS proxy.
+No Docker/Podman executable was available, so actual image build is unverified.
+
+## Runtime secrets and configuration
+
+Register BETTER_AUTH_SECRET, explicit HTTPS BETTER_AUTH_URL and NVIDIA_API_KEY as
+appropriate runtime secrets/plain configuration. Model/base URL are fixed server
+constants. All DB connection variables above come from AXHub; do not overwrite
+them with local URLs. Never upload .env.local or local PostgreSQL files.
+
+The official network permits outbound public HTTPS443, including NVIDIA. Actual
+AXHub egress, secret injection, tenant binding and resource adequacy have not been
+tested because deployment is not authorized. Minimum platform specs may be tight;
+verify actual resources under deployment approval. Ingress address/rate-limit
+proxy headers must be validated before setting BORDERLESS_TRUSTED_IP_HEADER.
+
+## Remaining production work
+
+- Keep one application instance: Deep Review state is durable but worker execution
+  is in-process. Restarts mark unfinished jobs interrupted, retaining partial work.
+- Configure backup/restore policy and exercise recovery for managed PostgreSQL.
+- Email verification/password-reset delivery and account recovery are not wired.
+- Groble checkout/webhook verification and Enterprise contract fulfillment await
+  official merchant integration/account configuration; no live payment is possible.
+- Review service terms and legal scope with a qualified human before commercial use.
+
+## Approval gate
+
+Local implementation, testing and local commits only. No remote app creation,
+environment mutation, Git push, preview, staging, release publication or deployment.
+STOP and wait for a subsequent explicit user instruction such as “배포해”.

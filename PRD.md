@@ -26,7 +26,7 @@ Initial customer: Korean B2B SaaS founder/COO entering the US. MVP covers select
 - AXHub deployment only after all local checks pass AND user explicitly approves it in a later message.
 
 ## P1 later
-Organization auth and RBAC, expert review, uploaded document extraction, regulatory change alerts, PostgreSQL, background jobs, full audit security, more jurisdictions.
+Expert review, uploaded binary document extraction, regulatory change alerts, distributed job workers, email verification/recovery delivery, more jurisdictions. Organization authentication, RBAC and PostgreSQL are implemented in the current scope.
 
 ## Not in MVP
 Actual entity formation, tax filing, legal certification, payment, automated submissions, real-time nationwide law coverage, guaranteed cost savings.
@@ -44,3 +44,6 @@ Sell time savings in legal preparation and continuous workflow management, not a
 
 ## Commercialization and billing
 See BILLING.md. Groble is a **candidate** for self-serve checkout and recurring billing, subject to verification. Enterprise contracting, terms acceptance, and payment are separate processes. Billing is post-MVP; no fake paid checkout.
+## Current organization and commercial journey
+
+Public landing → real signup/login → company create or invite application → Draft organization with Owner and workspace → plan selection → versioned service terms → Free activation or pending verified paid/enterprise workflow → organization workspace → project creation → project-only regulatory operations. Before approval/activation/project selection no project navigation or internal data is available. Every API enforces identity, membership and project scope. Current paid checkout is visibly disabled because provider API/webhook requirements are unverified; Enterprise requests record Pending human review. Project Documents support text create/read/delete. Quick Assessment is immediate; Deep Review is an independently polled/cancellable persisted task with progressive validated topics.

@@ -33,3 +33,14 @@ Keyboard accessible controls, focus indicators, proper labels, empty/loading/err
 
 ## Commercial UX
 Pricing and enterprise sales pages should match Quiet Enterprise. Never simulate a successful checkout or imply an enterprise contract has been executed. No AI-style purchase funnel.
+## Account and organization navigation
+
+Public landing has signup/signin only. A signed-in user with no approved company
+sees create/join and pending approval. Company selection and project selection are
+different screens. Company workspace shows overview, membership, plans and project
+list; regulatory/task/scenario/activity/document navigation exists only inside a
+selected project. Header/breadcrumb show current user, company, project and role.
+Draft activation steps show canonical terms and explicit payment configuration
+state; no paid-success simulation. Viewer controls are disabled and explained,
+with server authorization authoritative. Quick and Deep results remain separate,
+and every deep topic distinguishes validated completion from rule screening.

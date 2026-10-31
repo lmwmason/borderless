@@ -56,3 +56,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Organization architecture update
+
+Runtime APIs use Better Auth sessions, approved organization membership and explicit project scope. PostgreSQL via Drizzle migrations is mandatory; JSON adapters exist only for legacy import and isolated regression fixtures. Runtime/auth DB roles are separate; project tables enforce RLS in transaction-local scope. Draft organizations need plan selection/current terms and server-verified activation; Free activates locally, paid Groble checkout remains disabled until a verified integration exists. Never weaken authentication, tenant isolation or payment verification for demo convenience. Preserve Quick Assessment and progressive cancellable Deep Review within projects. Auth/DB agent owns src/lib/auth and src/lib/db, organization agent owns src/lib/organizations and billing, UI owns components, QA owns tests; orchestrator integrates API scopes and migrations.

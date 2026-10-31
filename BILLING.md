@@ -1,18 +1,39 @@
-# BILLING.md — Groble billing strategy (post-MVP)
+# Billing and enterprise onboarding
 
-## Decision
-Groble is a candidate payment processor for Korean startup customers. It is NOT assumed to provide B2B electronic contract signing, tax invoices, invoicing, or enterprise procurement. Confirm current official documentation, eligibility, fees, webhook support, authentication, and commercial terms before implementing. Do not fabricate API routes, webhook signatures, pricing or capabilities.
+## Implemented local state machine
 
-## Commercial flows
-1. Self-serve startup: company account → accept versioned SaaS terms and privacy/data processing terms as applicable → select plan → hosted checkout if supported → server-verified payment confirmation → subscription entitlement.
-2. Enterprise: sales inquiry → negotiated order form/MSA/DPA as applicable → human contract approval → invoicing/payment workflow appropriate to customer; Groble only if supported and agreed.
-3. Never equate successful payment with signed enterprise contract, and never activate paid access from a browser redirect alone.
+Draft organization creation also creates Owner/workspace and Pending Free
+subscription. Owner/Admin selects Free/Startup/Business/Enterprise. Canonical pilot
+service terms are returned by the server; acceptance records actor ID, version,
+hash and server timestamp independently of subscription/payment.
 
-## Future implementation interfaces
-- `BillingProvider` adapter, `CheckoutSession`, `Subscription`, `PaymentEvent`, `Entitlement`, `ContractAcceptance` with separate states.
-- Verify webhook authenticity, deduplicate event IDs, make entitlement changes idempotent, handle refunds/cancellations/failed payments.
-- Store no card details. Keep billing keys server-side. Use sandbox credentials only during testing.
-- Price hypotheses: Launch Audit per-report, Startup monthly, Business monthly, enterprise custom. Do not publish prices as validated market rates.
+Free activation requires current terms acceptance and runs atomically without a
+charge. Selecting a paid plan requests Pending status and cannot activate paid
+features. Enterprise requests record notes and Pending human review. No enterprise
+contract is asserted to have been signed by service-terms acceptance.
 
-## Four-hour hackathon scope
-Billing integration is **P2 / deferred**. Show an honest pricing/Contact Sales page if time permits, without fake checkout, fake contracts or nonfunctional payment buttons. Focus on legal assessment + collaborative workflow + Decision Twin. Never initiate a live charge or create a live Groble merchant account autonomously.
+Subscription states: Pending/Active/Failed/Canceled/Expired. Entitlements require
+Active organization and Active subscription; paid states additionally require
+future expiry. Cancellation/expiry never deletes project records. Pending local
+requests can be canceled and retried or switched to Free. Changes to an actually
+Active subscription require human/provider review until verified integration
+exists. Subscription and payment changes are actor-audited.
+
+## Groble integration boundary
+
+Official material checked: https://www.groble.im/help/faq (2026-10-31), describing
+the seller/consumer checkout product. This does not establish a public merchant
+API, recurring SaaS billing, signed webhooks or B2B contract signing.
+
+A documented API/webhook authenticity contract and appropriate account/keys were
+not verified. Therefore checkoutAvailable=false and checkout requests return503
+CONFIG_REQUIRED; no external charge or invented checkout URL, webhook signature,
+price, successful payment or paid entitlement is generated. Merely setting an
+unverified provider key will not bypass this gate.
+
+BillingProvider remains the future adapter boundary. Future integration must
+authenticate server events, deduplicate provider IDs, reconcile amount/product/
+organization, handle expiry/refund/cancel and make entitlement updates idempotent.
+payment_events has a unique provider event ID and verified flag but there is no
+public fake-activation webhook endpoint. Enterprise fulfillment and contract review
+are manual/unimplemented, with requests truthfully Pending.

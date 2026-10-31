@@ -12,7 +12,8 @@ ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=8080 NEXT_TELEMETRY_DISABLED=1
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
-RUN mkdir -p /app/data && chown node:node /app/data
+COPY --from=build --chown=node:node /app/.release/migrate.cjs ./.release/migrate.cjs
+COPY --from=build --chown=node:node /app/drizzle ./drizzle
 USER node
 EXPOSE 8080
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node .release/migrate.cjs && exec node server.js"]

@@ -3,10 +3,20 @@ name: borderless
 runtime:
   port: 8080
   health_path: /api/health
+  healthcheck:
+    start_period: 120s
 build:
   deploy_method: docker
   dockerfile: Dockerfile
+database:
+  engine: postgres
+  roles: [runtime, auth]
+  owner_bypass_rls: true
 env:
   required:
     - name: NVIDIA_API_KEY
+      scope: runtime
+    - name: BETTER_AUTH_SECRET
+      scope: runtime
+    - name: BETTER_AUTH_URL
       scope: runtime

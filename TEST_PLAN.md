@@ -19,3 +19,16 @@ Desktop 1440px, mobile 375px; keyboard navigation; forms and unknown states; loa
 
 ## Release gate
 Run lint (if configured), typecheck, tests, production build, local smoke and real NVIDIA request with configured key. If API key is unavailable, report integration unverified rather than claiming pass. AXHub deploy only once after gate.
+
+## Organization/security regression gates
+
+Run the suite against isolated actual PostgreSQL with restricted runtime/auth
+roles and the same Drizzle migrations as AXHub. Verify signup/signin/logout/expiry,
+password hashing and cookies, persisted auth/action rate limits, no-org onboarding,
+Draft Owner/workspace creation, canonical terms and Free activation, invitation
+expiry/revocation, Pending block/approval/rejection, Member admin denial, Viewer
+write denial, cross-org/project IDOR, RLS and auth-table isolation. Paid requests
+and forged browser status cannot activate access; cancelled/expired subscriptions
+retain SQL records. Test dry-run/nonempty/invalid-reference legacy imports.
+Browser QA must use actual sessions/onboarding and HTTPS production cookies;
+only Deep Review transport may use explicitly identified controlled fixtures.
