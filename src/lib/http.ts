@@ -1,6 +1,6 @@
 import { ZodError } from 'zod';
 export class ApiError extends Error {constructor(public status:number,public code:string,message:string){super(message)}}
-export async function handle(run:()=>Promise<unknown>):Promise<Response>{
+async function canonicalHandle(run:()=>Promise<unknown>):Promise<Response>{
  try {return Response.json(await run(),{headers:{'Cache-Control':'no-store'}})}
  catch(error){if(error instanceof ZodError)return Response.json({error:{code:'VALIDATION',message:'Invalid request fields.',retryable:false}},{status:400});
  if(error instanceof ApiError)return Response.json({error:{code:error.code,message:error.message,retryable:false}},{status:error.status});
@@ -29,4 +29,18 @@ export async function readBody(request:Request){
  }finally{reader.releaseLock();}
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+/** Localize transport errors without changing machine codes or stored content. */
+export async function handle(run:()=>Promise<unknown>):Promise<Response>{
+ const response=await canonicalHandle(run);if(response.ok)return response;
+ try{
+  const {headers}=await import('next/headers'),requestHeaders=await headers();
+  if(requestHeaders.get('x-borderless-locale')!=='ko')return response;
+  const body=await response.clone().json();if(!body.error?.message)return response;
+  const {translateCopy}=await import('../i18n/messages');
+  const original=body.error.message,translated=translateCopy('ko','errors',original);
+  body.error.message=translated!==original?translated:translateCopy('ko','errors','The request could not be completed.');
+  return Response.json(body,{status:response.status,headers:response.headers});
+ }catch{return response;}
 }

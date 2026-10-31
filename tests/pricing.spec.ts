@@ -21,13 +21,13 @@ test('public pricing truthfully disables unconfigured payment links without muta
  await expect(page.getByRole('heading',{name:'Business',exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Enterprise',exact:true})).toBeVisible();
  await expect(page.getByText('Custom pricing',{exact:true})).toBeVisible();
- await expect(page.getByRole('link',{name:'Contact sales',exact:true})).toHaveAttribute('href','/?auth=signin&intent=enterprise');
+ await expect(page.getByRole('link',{name:'Contact sales',exact:true})).toHaveAttribute('href','/en/?auth=signin&intent=enterprise');
  await expect(page.getByRole('button',{name:'Select Startup',exact:true})).toBeDisabled();
  await expect(page.getByRole('button',{name:'Select Business',exact:true})).toBeDisabled();
- await expect(page.locator('.pricing-amount').filter({hasText:/^0 KRW/})).toHaveCount(1);
- await expect(page.locator('.pricing-amount').filter({hasText:/^49,000 KRW/})).toHaveCount(1);
- await expect(page.locator('.pricing-amount').filter({hasText:'149,000 KRW'})).toHaveCount(1);
- await expect(page.getByRole('link',{name:'Start Free',exact:true})).toHaveAttribute('href','/?auth=signup');
+ await expect(page.locator('.pricing-amount').filter({hasText:/^₩0/})).toHaveCount(1);
+ await expect(page.locator('.pricing-amount').filter({hasText:/^₩49,000/})).toHaveCount(1);
+ await expect(page.locator('.pricing-amount').filter({hasText:'₩149,000'})).toHaveCount(1);
+ await expect(page.getByRole('link',{name:'Start Free',exact:true})).toHaveAttribute('href','/en/?auth=signup');
  await expect(page.getByText('Payment link not configured.',{exact:false}).first()).toBeVisible();
  expect(mutations).toEqual([]);
 });
@@ -38,7 +38,7 @@ test('billing return ignores forged success parameters and makes no activation r
  const query=new URLSearchParams({organizationId,paid:'true',status:'Active',success:'true',paymentVerified:'true',plan:'Business',redirect:'https://invalid.example/activate'});
  await page.goto('/billing/return?'+query);
  await expect(page.getByRole('heading',{name:'Payment confirmation pending',exact:true})).toBeVisible();
- await expect(page.getByRole('link',{name:'Open organization billing',exact:false})).toHaveAttribute('href','/?'+new URLSearchParams({organizationId,view:'billing'}));
+ await expect(page.getByRole('link',{name:'Open organization billing',exact:false})).toHaveAttribute('href','/en/?'+new URLSearchParams({organizationId,view:'billing'}));
  await expect(page.getByText('This return page performs no payment, subscription or activation mutations.',{exact:true})).toBeVisible();
  expect(mutations).toEqual([]);
  expect(externalRequests).toEqual([]);

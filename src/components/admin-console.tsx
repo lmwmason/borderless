@@ -1,27 +1,106 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
-import {AdminContractBuilder} from './admin-contract-builder';
-import type {ContractMetadata} from '@/lib/entitlements';
-import {AdminHeader,adminApi,AdminApiError,type AdminSession} from './admin-shared';
-type Organization={id:string;name:string;status:string;plan:string;subscriptionStatus:string;expiresAt:string|null;currentContract?:ContractMetadata|null};
-type User={id:string;name:string;email:string;createdAt:string;isAdmin?:boolean};
-type Overview={stats:{users:number;organizations:number;projects:number;enterpriseInquiries:number;activeSubscriptions:number};users:User[];organizations:Organization[];recentActivity:{id:string;actorId:string|null;actorName:string|null;action:string;detail:Record<string,unknown>;createdAt:string}[]};
-export function AdminConsolePage(){
- const [session,setSession]=useState<AdminSession|null>(null),[overview,setOverview]=useState<Overview|null>(null),[phase,setPhase]=useState<'loading'|'allowed'|'signin'|'restricted'|'unavailable'>('loading'),[tab,setTab]=useState<'Overview'|'Organizations'|'Users'|'Audit activity'>('Overview'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const [organization,setOrganization]=useState<Organization|null>(null),[user,setUser]=useState<User|null>(null),[contractReference,setContractReference]=useState(''),[expiresAt,setExpiresAt]=useState(''),[reason,setReason]=useState(''),[attested,setAttested]=useState(false),[accessReason,setAccessReason]=useState(''),[sessionReason,setSessionReason]=useState('');
- const epoch=useRef(0);
- function clear(){setOverview(null);setOrganization(null);setUser(null);setContractReference('');setExpiresAt('');setReason('');setAttested(false);setAccessReason('');setSessionReason('')}
- function fail(cause:unknown){clear();setNotice('');setError(cause instanceof Error?cause.message:'The Admin Console is unavailable.');setPhase(cause instanceof AdminApiError&&cause.status===401?'signin':cause instanceof AdminApiError&&cause.status===403?'restricted':'unavailable')}
- async function load(){const current=++epoch.current;setBusy(true);setError('');clear();setPhase('loading');try{const next=await adminApi<AdminSession>('/api/admin/session');if(current!==epoch.current)return;setSession(next);if(!next.user){clear();setPhase('signin');return}const data=await adminApi<Overview>('/api/admin/overview');if(current!==epoch.current)return;setOverview(data);setPhase('allowed');const requested=new URLSearchParams(window.location.search).get('organizationId');const selected=requested?data.organizations.find(item=>item.id===requested):undefined;if(selected){setTab('Organizations');manageOrganization(selected)}}catch(cause){if(current===epoch.current)fail(cause)}finally{if(current===epoch.current)setBusy(false)}}
- useEffect(()=>{void load();return()=>{epoch.current++}},[]);
- async function mutate(path:string,method:string,body:unknown,message:string){const current=++epoch.current;setBusy(true);setError('');setNotice('');try{await adminApi(path,method,body);if(current!==epoch.current)return;await load();setNotice(message)}catch(cause){if(current===epoch.current)fail(cause)}finally{if(current===epoch.current)setBusy(false)}}
- function manageOrganization(next:Organization){setOrganization(next);setUser(null);setContractReference('');setExpiresAt('');setReason('');setAttested(false);setAccessReason('')}
- function manageUser(next:User){setUser(next);setOrganization(null);setSessionReason('')}
- return <div className="account-shell"><AdminHeader/><main className="account-main admin-console-main"><span className="eyebrow">PLATFORM ADMINISTRATION</span><div className="page-heading"><div><h1>Admin Console</h1><p>{session?.user?session.user.name+' · '+session.user.loginId:'Separate administrator authentication'}</p></div><button disabled={busy} onClick={()=>void load()}>Refresh admin overview</button></div>{error&&<div className="alert error" role="alert">{error}</div>}{notice&&<div className="alert success" role="status">{notice}</div>}{phase==='loading'?<section className="panel empty-state" role="status">Loading authorized administration data…</section>:phase!=='allowed'?<section className="panel account-panel"><h2>{phase==='signin'?'Admin sign-in required':phase==='restricted'?'Administrator access required':'Admin Console unavailable'}</h2><p>Administration data has been cleared. Sign in with an authorized administrator account or retry the connection.</p><a className="button" href="/admin/login">Open admin sign in</a></section>:overview&&<>
- <nav className="organization-tabs" aria-label="Administration sections">{(['Overview','Organizations','Users','Audit activity'] as const).map(item=><button key={item} aria-current={tab===item?'page':undefined} onClick={()=>{setTab(item);setOrganization(null);setUser(null)}}>{item}</button>)}</nav>
- {tab==='Overview'&&<><div className="admin-stats">{Object.entries(overview.stats).map(([key,value])=><article className="stat" key={key}><span>{({users:'Users',organizations:'Organizations',projects:'Projects',enterpriseInquiries:'Enterprise inquiries',activeSubscriptions:'Active subscriptions'} as Record<string,string>)[key]}</span><strong>{value}</strong></article>)}</div><section className="panel account-panel"><h2>Administration with a recorded reason</h2><p>Organization access, manually reviewed Enterprise contracts and account session revocations are separate operations. Sales pipeline outcomes never grant paid access by themselves.</p><div className="actions"><button onClick={()=>setTab('Organizations')}>Manage organizations</button><button onClick={()=>setTab('Users')}>Manage user sessions</button><a className="button" href="/admin/inquiries">Open Enterprise sales CRM →</a></div></section></>}
- {tab==='Organizations'&&<><section className="panel table-scroll"><table><thead><tr><th>Organization</th><th>Access</th><th>Plan / subscription</th><th>Expires</th></tr></thead><tbody>{overview.organizations.map(item=><tr key={item.id}><td><button disabled={busy} className="table-link" onClick={()=>manageOrganization(item)}>{item.name}</button></td><td>{item.status}</td><td>{item.plan} · {item.subscriptionStatus}</td><td>{item.expiresAt?new Date(item.expiresAt).toLocaleString():'Not recorded'}</td></tr>)}</tbody></table>{!overview.organizations.length&&<div className="empty-state">No organizations to display.</div>}</section>{organization&&<section className="panel account-panel admin-action-panel" aria-label="Organization administration"><span className="eyebrow">{organization.status} · {organization.plan}</span><h2>{organization.name}</h2><AdminContractBuilder key={organization.id} organizationId={organization.id} isDemo={!!session?.user?.isDemo} currentContract={organization.currentContract} onChanged={async message=>{await load();setNotice(message)}} onAuthorizationError={fail}/><form className="profile-form activation-panel" onSubmit={e=>{e.preventDefault();void mutate('/api/admin/organizations/'+encodeURIComponent(organization.id),'PATCH',{action:organization.status==='Active'?'suspend':'resume',reason:accessReason},'Organization access change recorded.')}}><h3 className="full">Organization access control</h3><label className="full">Organization access change reason<textarea required disabled={busy} maxLength={5000} rows={3} value={accessReason} onChange={e=>setAccessReason(e.target.value)}/></label><button disabled={busy||(organization.status!=='Active'&&organization.subscriptionStatus!=='Active')} className={organization.status==='Active'?'danger-button full':'primary full'}>{organization.status==='Active'?'Suspend organization':'Resume organization'}</button></form></section>}</>}
- {tab==='Users'&&<><section className="panel table-scroll"><table><thead><tr><th>User</th><th>Email</th><th>Created</th><th>Sessions</th></tr></thead><tbody>{overview.users.map(item=><tr key={item.id}><td>{item.name}</td><td>{item.email}</td><td>{new Date(item.createdAt).toLocaleString()}</td><td><button disabled={busy||item.isAdmin} onClick={()=>manageUser(item)}>Manage sessions for {item.name}</button>{item.isAdmin&&<small className="block muted">Administrator sessions use separate Admin sign out.</small>}</td></tr>)}</tbody></table>{!overview.users.length&&<div className="empty-state">No users to display.</div>}</section>{user&&<section className="panel account-panel admin-action-panel" aria-label="User session administration"><h2>{user.name}</h2><p>{user.email}</p><form className="profile-form" onSubmit={e=>{e.preventDefault();void mutate('/api/admin/users/'+encodeURIComponent(user.id)+'/revoke-sessions','POST',{reason:sessionReason},'User session revocation recorded.')}}><label className="full">Session revocation reason<textarea required disabled={busy} rows={4} maxLength={5000} value={sessionReason} onChange={e=>setSessionReason(e.target.value)}/></label><p className="footnote full">This ends existing account sessions. It does not change the user's password.</p><button disabled={busy} className="danger-button full">Revoke user sessions</button></form></section>}</>}
- {tab==='Audit activity'&&<section className="panel account-panel"><h2>Recent administration activity</h2><ol className="admin-audit">{overview.recentActivity.map(item=><li key={item.id}><strong>{item.action.replaceAll('.',' ').replaceAll('_',' ')}</strong><small>{item.actorName||'Server configuration'} · {new Date(item.createdAt).toLocaleString()}</small>{Object.entries(item.detail||{}).filter(([key])=>['organizationId','userId','from','to','reason','expiresAt','contractReference'].includes(key)).map(([key,value])=><span key={key}>{key}: {value===null?'Not recorded':typeof value==='object'?JSON.stringify(value):String(value)}</span>)}</li>)}</ol>{!overview.recentActivity.length&&<p>No recent audit activity is available.</p>}</section>}
- </>}<footer>Administrator permissions are independent of company and expert roles.<span>Every consequential change requires an explicit reason.</span></footer></main></div>
+import {useCopy,useLocalePath} from '@/i18n/client';
+import {useLocale,useFormatter} from 'next-intl';
+import { useEffect, useRef, useState } from 'react';
+import { AdminContractBuilder } from './admin-contract-builder';
+import type { ContractMetadata } from '@/lib/entitlements';
+import { AdminHeader, adminApi, AdminApiError, type AdminSession } from './admin-shared';
+type Organization = {
+    id: string;
+    name: string;
+    status: string;
+    plan: string;
+    subscriptionStatus: string;
+    expiresAt: string | null;
+    currentContract?: ContractMetadata | null;
+};
+type User = {
+    id: string;
+    name: string;
+    email: string;
+    createdAt: string;
+    isAdmin?: boolean;
+};
+type Overview = {
+    stats: {
+        users: number;
+        organizations: number;
+        projects: number;
+        enterpriseInquiries: number;
+        activeSubscriptions: number;
+    };
+    users: User[];
+    organizations: Organization[];
+    recentActivity: {
+        id: string;
+        actorId: string | null;
+        actorName: string | null;
+        action: string;
+        detail: Record<string, unknown>;
+        createdAt: string;
+    }[];
+};
+export function AdminConsolePage() {
+    const t = useCopy("admin");
+    const locale=useLocale();const localeHref=useLocalePath();const formatter=useFormatter();
+    const [session, setSession] = useState<AdminSession | null>(null), [overview, setOverview] = useState<Overview | null>(null), [phase, setPhase] = useState<'loading' | 'allowed' | 'signin' | 'restricted' | 'unavailable'>('loading'), [tab, setTab] = useState<'Overview' | 'Organizations' | 'Users' | 'Audit activity'>('Overview'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
+    const [organization, setOrganization] = useState<Organization | null>(null), [user, setUser] = useState<User | null>(null), [contractReference, setContractReference] = useState(''), [expiresAt, setExpiresAt] = useState(''), [reason, setReason] = useState(''), [attested, setAttested] = useState(false), [accessReason, setAccessReason] = useState(''), [sessionReason, setSessionReason] = useState('');
+    const epoch = useRef(0);
+    function clear() { setOverview(null); setOrganization(null); setUser(null); setContractReference(''); setExpiresAt(''); setReason(''); setAttested(false); setAccessReason(''); setSessionReason(''); }
+    function fail(cause: unknown) { clear(); setNotice(''); setError(cause instanceof Error ? cause.message : 'The Admin Console is unavailable.'); setPhase(cause instanceof AdminApiError && cause.status === 401 ? 'signin' : cause instanceof AdminApiError && cause.status === 403 ? 'restricted' : 'unavailable'); }
+    async function load() { const current = ++epoch.current; setBusy(true); setError(''); clear(); setPhase('loading'); try {
+        const next = await adminApi<AdminSession>('/api/admin/session');
+        if (current !== epoch.current)
+            return;
+        setSession(next);
+        if (!next.user) {
+            clear();
+            setPhase('signin');
+            return;
+        }
+        const data = await adminApi<Overview>('/api/admin/overview');
+        if (current !== epoch.current)
+            return;
+        setOverview(data);
+        setPhase('allowed');
+        const requested = new URLSearchParams(window.location.search).get('organizationId');
+        const selected = requested ? data.organizations.find(item => item.id === requested) : undefined;
+        if (selected) {
+            setTab('Organizations');
+            manageOrganization(selected);
+        }
+    }
+    catch (cause) {
+        if (current === epoch.current)
+            fail(cause);
+    }
+    finally {
+        if (current === epoch.current)
+            setBusy(false);
+    } }
+    useEffect(() => { void load(); return () => { epoch.current++; }; }, []);
+    async function mutate(path: string, method: string, body: unknown, message: string) { const current = ++epoch.current; setBusy(true); setError(''); setNotice(''); try {
+        await adminApi(path, method, body);
+        if (current !== epoch.current)
+            return;
+        await load();
+        setNotice(message);
+    }
+    catch (cause) {
+        if (current === epoch.current)
+            fail(cause);
+    }
+    finally {
+        if (current === epoch.current)
+            setBusy(false);
+    } }
+    function manageOrganization(next: Organization) { setOrganization(next); setUser(null); setContractReference(''); setExpiresAt(''); setReason(''); setAttested(false); setAccessReason(''); }
+    function manageUser(next: User) { setUser(next); setOrganization(null); setSessionReason(''); }
+    return <div className="account-shell"><AdminHeader /><main className="account-main admin-console-main"><span className="eyebrow">{t("PLATFORM ADMINISTRATION")}</span><div className="page-heading"><div><h1>{t("Admin Console")}</h1><p>{session?.user ? session.user.name + ' · ' + session.user.loginId : t("Separate administrator authentication")}</p></div><button disabled={busy} onClick={() => void load()}>{t("Refresh admin overview")}</button></div>{error && <div className="alert error" role="alert">{t(error)}</div>}{notice && <div className="alert success" role="status">{t(notice)}</div>}{phase === 'loading' ? <section className="panel empty-state" role="status">{t("Loading authorized administration data\u2026")}</section> : phase !== 'allowed' ? <section className="panel account-panel"><h2>{phase === 'signin' ? t("Admin sign-in required") : phase === 'restricted' ? t("Administrator access required") : t("Admin Console unavailable")}</h2><p>{t("Administration data has been cleared. Sign in with an authorized administrator account or retry the connection.")}</p><a className="button" href={localeHref("/admin/login")}>{t("Open admin sign in")}</a></section> : overview && <>
+ <nav className="organization-tabs" aria-label={t("Administration sections")}>{(['Overview', 'Organizations', 'Users', 'Audit activity'] as const).map(item => <button key={item} aria-current={tab === item ? 'page' : undefined} onClick={() => { setTab(item); setOrganization(null); setUser(null); }}>{t(item)}</button>)}</nav>
+ {tab === 'Overview' && <><div className="admin-stats">{Object.entries(overview.stats).map(([key, value]) => <article className="stat" key={key}><span>{t(({ users: 'Users', organizations: 'Organizations', projects: 'Projects', enterpriseInquiries: 'Enterprise inquiries', activeSubscriptions: 'Active subscriptions' } as Record<string, string>)[key])}</span><strong>{value}</strong></article>)}</div><section className="panel account-panel"><h2>{t("Administration with a recorded reason")}</h2><p>{t("Organization access, manually reviewed Enterprise contracts and account session revocations are separate operations. Sales pipeline outcomes never grant paid access by themselves.")}</p><div className="actions"><button onClick={() => setTab('Organizations')}>{t("Manage organizations")}</button><button onClick={() => setTab('Users')}>{t("Manage user sessions")}</button><a className="button" href={localeHref("/admin/inquiries")}>{t("Open Enterprise sales CRM \u2192")}</a></div></section></>}
+ {tab === 'Organizations' && <><section className="panel table-scroll"><table><thead><tr><th>{t("Organization")}</th><th>{t("Access")}</th><th>{t("Plan / subscription")}</th><th>{t("Expires")}</th></tr></thead><tbody>{overview.organizations.map(item => <tr key={item.id}><td><button disabled={busy} className="table-link" onClick={() => manageOrganization(item)}>{item.name}</button></td><td>{t(item.status)}</td><td>{t(item.plan)} · {t(item.subscriptionStatus)}</td><td>{item.expiresAt ? formatter.dateTime(new Date(item.expiresAt),{dateStyle:'medium',timeStyle:'short'}) : t("Not recorded")}</td></tr>)}</tbody></table>{!overview.organizations.length && <div className="empty-state">{t("No organizations to display.")}</div>}</section>{organization && <section className="panel account-panel admin-action-panel" aria-label={t("Organization administration")}><span className="eyebrow">{t(organization.status)} · {t(organization.plan)}</span><h2>{organization.name}</h2><AdminContractBuilder key={organization.id} organizationId={organization.id} isDemo={!!session?.user?.isDemo} currentContract={organization.currentContract} onChanged={async (message) => { await load(); setNotice(message); }} onAuthorizationError={fail}/><form className="profile-form activation-panel" onSubmit={e => { e.preventDefault(); void mutate('/api/admin/organizations/' + encodeURIComponent(organization.id), 'PATCH', { action: organization.status === 'Active' ? 'suspend' : 'resume', reason: accessReason }, 'Organization access change recorded.'); }}><h3 className="full">{t("Organization access control")}</h3><label className="full">{t("Organization access change reason")}<textarea required disabled={busy} maxLength={5000} rows={3} value={accessReason} onChange={e => setAccessReason(e.target.value)}/></label><button disabled={busy || (organization.status !== 'Active' && organization.subscriptionStatus !== 'Active')} className={organization.status === 'Active' ? 'danger-button full' : 'primary full'}>{organization.status === 'Active' ? t("Suspend organization") : t("Resume organization")}</button></form></section>}</>}
+ {tab === 'Users' && <><section className="panel table-scroll"><table><thead><tr><th>{t("User")}</th><th>{t("Email")}</th><th>{t("Created")}</th><th>{t("Sessions")}</th></tr></thead><tbody>{overview.users.map(item => <tr key={item.id}><td>{item.name}</td><td>{item.email}</td><td>{formatter.dateTime(new Date(item.createdAt),{dateStyle:'medium',timeStyle:'short'})}</td><td><button disabled={busy || item.isAdmin} onClick={() => manageUser(item)}>{"" + t("Manage sessions for") + " "}{item.name}</button>{item.isAdmin && <small className="block muted">{t("Administrator sessions use separate Admin sign out.")}</small>}</td></tr>)}</tbody></table>{!overview.users.length && <div className="empty-state">{t("No users to display.")}</div>}</section>{user && <section className="panel account-panel admin-action-panel" aria-label={t("User session administration")}><h2>{user.name}</h2><p>{user.email}</p><form className="profile-form" onSubmit={e => { e.preventDefault(); void mutate('/api/admin/users/' + encodeURIComponent(user.id) + '/revoke-sessions', 'POST', { reason: sessionReason }, 'User session revocation recorded.'); }}><label className="full">{t("Session revocation reason")}<textarea required disabled={busy} rows={4} maxLength={5000} value={sessionReason} onChange={e => setSessionReason(e.target.value)}/></label><p className="footnote full">{t("This ends existing account sessions. It does not change the user's password.")}</p><button disabled={busy} className="danger-button full">{t("Revoke user sessions")}</button></form></section>}</>}
+ {tab === 'Audit activity' && <section className="panel account-panel"><h2>{t("Recent administration activity")}</h2><ol className="admin-audit">{overview.recentActivity.map(item => <li key={item.id}><strong>{t(item.action)}</strong><small>{item.actorName || t("Server configuration")} · {formatter.dateTime(new Date(item.createdAt),{dateStyle:'medium',timeStyle:'short'})}</small>{Object.entries(item.detail || {}).filter(([key]) => ['organizationId', 'userId', 'from', 'to', 'reason', 'expiresAt', 'contractReference'].includes(key)).map(([key, value]) => <span key={key}>{t(key)}: {value === null ? t("Not recorded") : typeof value === 'object' ? JSON.stringify(value) : ['from','to'].includes(key)?t(String(value)):String(value)}</span>)}</li>)}</ol>{!overview.recentActivity.length && <p>{t("No recent audit activity is available.")}</p>}</section>}
+ </>}<footer>{t("Administrator permissions are independent of company and expert roles.")}<span>{t("Every consequential change requires an explicit reason.")}</span></footer></main></div>;
 }

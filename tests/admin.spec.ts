@@ -15,7 +15,7 @@ async function fixture(){const value=JSON.parse(await readFile(fixturePath,'utf8
 async function call<T=any>(api:APIRequestContext,method:'get'|'post'|'put'|'patch',path:string,data?:unknown,projectId?:string):Promise<T>{
  const response=await api[method](path,{headers:{origin:baseURL,...(projectId?{'x-project-id':projectId}:{})},...(data===undefined?{}:{data})});expect(response.status(),method.toUpperCase()+' '+path).toBe(200);return response.json();
 }
-async function login(page:Page){const credentials=await fixture();await page.goto('/admin/login');await expect(page.getByLabel('Admin login ID',{exact:true})).toHaveValue('');await expect(page.getByLabel('Admin password',{exact:true})).toHaveValue('');await page.getByLabel('Admin login ID',{exact:true}).fill(credentials.adminLogin);await page.getByLabel('Admin password',{exact:true}).fill(credentials.adminPassword);await page.getByRole('button',{name:'Sign in to Admin Console',exact:true}).click();await expect(page).toHaveURL(baseURL+'/admin');await expect(page.getByRole('heading',{name:'Admin Console',exact:true})).toBeVisible()}
+async function login(page:Page){const credentials=await fixture();await page.goto('/admin/login');await expect(page.getByLabel('Admin login ID',{exact:true})).toHaveValue('');await expect(page.getByLabel('Admin password',{exact:true})).toHaveValue('');await page.getByLabel('Admin login ID',{exact:true}).fill(credentials.adminLogin);await page.getByLabel('Admin password',{exact:true}).fill(credentials.adminPassword);await page.getByRole('button',{name:'Sign in to Admin Console',exact:true}).click();await expect(page).toHaveURL(/\/en\/admin$/);await expect(page.getByRole('heading',{name:'Admin Console',exact:true})).toBeVisible()}
 const localDate=(value:number)=>new Date(value).toISOString().slice(0,16);
 test('SyntheticQA separate administrator login blocks regular sessions, persists reload and signs out independently',async({page})=>{
  const marker='SyntheticQA-AdminAuth-'+randomUUID().slice(0,8),email=marker.toLowerCase()+'@example.com',password='SyntheticQA-regular-account-2026!';
@@ -23,17 +23,17 @@ test('SyntheticQA separate administrator login blocks regular sessions, persists
  const ordinary=await call(page.request,'get','/api/account');expect(ordinary.user).toBeTruthy();
  expect((await page.request.get('/api/admin/overview')).status()).toBe(401);
  expect((await call(page.request,'get','/api/admin/session')).user).toBeNull();
- await page.goto('/admin/inquiries');await expect(page).toHaveURL(baseURL+'/admin/login');
+ await page.goto('/admin/inquiries');await expect(page).toHaveURL(/\/en\/admin\/login$/);
  const denied=await page.request.post('/api/admin/login',{headers:{origin:baseURL},data:{loginId:email,password}});expect(denied.status()).toBe(401);
  await login(page);
  const session=await call(page.request,'get','/api/admin/session');expect(session.user.isDemo).toBe(false);
  await page.reload();await expect(page.getByRole('heading',{name:'Admin Console',exact:true})).toBeVisible();
  await page.setViewportSize({width:375,height:812});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:'/tmp/borderless-admin-mobile-qa.png',fullPage:true});
- await page.getByRole('button',{name:'Admin sign out',exact:true}).click();await expect(page).toHaveURL(baseURL+'/admin/login');
+ await page.getByRole('button',{name:'Admin sign out',exact:true}).click();await expect(page).toHaveURL(/\/en\/admin\/login$/);
  expect((await call(page.request,'get','/api/admin/session')).user).toBeNull();
  expect((await call(page.request,'get','/api/account')).user.id).toBe(ordinary.user.id);
- await page.goto('/admin');await expect(page).toHaveURL(baseURL+'/admin/login');
+ await page.goto('/admin');await expect(page).toHaveURL(/\/en\/admin\/login$/);
 });
 test('SyntheticQA Admin Console clears overview data after administrator session loss',async({page})=>{
  await login(page);await expect(page.locator('.admin-stats')).toBeVisible();

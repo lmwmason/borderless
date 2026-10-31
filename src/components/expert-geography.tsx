@@ -1,0 +1,16 @@
+'use client';
+import {useMemo,useState} from 'react';
+import {useLocale} from 'next-intl';
+import {useCopy} from '@/i18n/client';
+import {COUNTRY_CODES} from '@/lib/experts/geography';
+import type {ExpertProfile} from '@/lib/expert-contracts';
+type Geography=Pick<ExpertProfile,'residenceCountry'|'qualificationCountry'|'licensedJurisdictions'|'serviceCountries'|'consultationModes'>;
+export function useExpertCountries(){
+ const locale=useLocale();
+ return useMemo(()=>{const names=new Intl.DisplayNames([locale],{type:'region'});return COUNTRY_CODES.map(code=>({code,name:names.of(code)||code})).sort((a,b)=>a.name.localeCompare(b.name,locale))},[locale]);
+}
+export function ExpertGeographyFields({value,onChange}:{value:Geography;onChange:(value:Geography)=>void}){
+ const t=useCopy('experts'),countries=useExpertCountries();
+ const [jurisdictions,setJurisdictions]=useState(value.licensedJurisdictions.join(', '));
+ return <><h3 className="full">{t('Location and qualification geography')}</h3><p className="footnote full">{t('Residence, qualification country and licensed jurisdictions are different facts. Leave unconfirmed information unknown. Geography claims do not verify a license.')}</p><label>{t('Residence country')}<select value={value.residenceCountry||''} onChange={e=>onChange({...value,residenceCountry:e.target.value||null})}><option value="">{t('Not provided')}</option>{countries.map(country=><option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}</select></label><label>{t('Qualification country')}<select value={value.qualificationCountry||''} onChange={e=>onChange({...value,qualificationCountry:e.target.value||null})}><option value="">{t('Not provided')}</option>{countries.map(country=><option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}</select></label><label className="full">{t('Licensed jurisdictions (codes, comma separated)')}<input placeholder={t("US-CA, KR")} value={jurisdictions} onChange={e=>{setJurisdictions(e.target.value);onChange({...value,licensedJurisdictions:e.target.value.split(',').map(code=>code.trim().toUpperCase()).filter(Boolean)})}}/><small className="muted">{t('Use country or jurisdiction codes such as US-CA. These are self-reported claims, not platform verification.')}</small></label><label className="full">{t('Countries served')}<select multiple size={5} value={value.serviceCountries} onChange={e=>onChange({...value,serviceCountries:Array.from(e.target.selectedOptions,option=>option.value)})}>{countries.map(country=><option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}</select><small className="muted">{t('Select every country where you offer services. No country is selected by default.')}</small></label><div className="full"><h3>{t('Consultation methods')}</h3>{(['remote','in_person'] as const).map(mode=><label className="checkbox-label" key={mode}><input type="checkbox" checked={value.consultationModes.includes(mode)} onChange={e=>onChange({...value,consultationModes:e.target.checked?[...value.consultationModes,mode]:value.consultationModes.filter(item=>item!==mode)})}/>{t(mode==='remote'?t("Remote consultation"):t("In-person consultation"))}</label>)}</div></>
+}

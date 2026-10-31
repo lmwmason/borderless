@@ -1,0 +1,25 @@
+'use client';
+import {useLocale} from 'next-intl';
+import {useCopy} from '@/i18n/client';
+import {localizedText} from '@/lib/experts/geography';
+import type {ExpertProfile,ExpertService,ProfileLocalizedContent,ServiceLocalizedContent} from '@/lib/expert-contracts';
+const profileLabels={bio:'Introduction',specialtiesDescription:'Specialties description',experience:'Professional experience',portfolioDescription:'Portfolio description'} as const;
+const serviceLabels={description:'Service description',scope:'Scope and deliverables',conditions:'Service conditions'} as const;
+const profileBlank={bio:'',specialtiesDescription:'',experience:'',portfolioDescription:''};
+const serviceBlank={description:'',scope:'',conditions:''};
+export function ExpertProfileTranslations({originalLanguage,onOriginalLanguage,value,onChange}:{originalLanguage:'en'|'ko';onOriginalLanguage:(value:'en'|'ko')=>void;value:ProfileLocalizedContent;onChange:(value:ProfileLocalizedContent)=>void}){
+ const t=useCopy('experts');
+ return <><h3 className="full">{t('Content language and expert-supplied translations')}</h3><label className="full">{t('Profile original language')}<select value={originalLanguage} onChange={e=>onOriginalLanguage(e.target.value as 'en'|'ko')}><option value="en">{t('English')}</option><option value="ko">{t('Korean')}</option></select></label><p className="footnote full">{t('Translations are optional and must be supplied by you. The platform does not generate translations. Missing translations display the original content with its language identified.')}</p>{(['en','ko'] as const).map(language=><details className="full expert-translation-editor" key={language}><summary>{t('{language} profile text (optional)',{language:t(language==='en'?t("English"):t("Korean"))})}</summary>{(Object.keys(profileLabels) as (keyof typeof profileLabels)[]).map(field=><label key={field}>{t('{language}: {field}',{language:t(language==='en'?t("English"):t("Korean")),field:t(profileLabels[field])})}<textarea rows={3} maxLength={field==='bio'||field==='specialtiesDescription'?5000:10000} value={value?.[language]?.[field]||''} onChange={e=>onChange({...value,[language]:{...profileBlank,...value?.[language],[field]:e.target.value}})}/></label>)}</details>)}</>
+}
+export function ExpertServiceTranslations({originalLanguage,onOriginalLanguage,value,onChange}:{originalLanguage:'en'|'ko';onOriginalLanguage:(value:'en'|'ko')=>void;value:ServiceLocalizedContent;onChange:(value:ServiceLocalizedContent)=>void}){
+ const t=useCopy('experts');
+ return <><label className="full">{t('Service original language')}<select value={originalLanguage} onChange={e=>onOriginalLanguage(e.target.value as 'en'|'ko')}><option value="en">{t('English')}</option><option value="ko">{t('Korean')}</option></select></label><p className="footnote full">{t('Service translations are expert-provided. Prices and the actual currency are never converted by a language change.')}</p>{(['en','ko'] as const).map(language=><details className="full expert-translation-editor" key={language}><summary>{t('{language} service text (optional)',{language:t(language==='en'?t("English"):t("Korean"))})}</summary>{(Object.keys(serviceLabels) as (keyof typeof serviceLabels)[]).map(field=><label key={field}>{t('{language}: {field}',{language:t(language==='en'?t("English"):t("Korean")),field:t(serviceLabels[field])})}<textarea rows={3} maxLength={5000} value={value?.[language]?.[field]||''} onChange={e=>onChange({...value,[language]:{...serviceBlank,...value?.[language],[field]:e.target.value}})}/></label>)}</details>)}</>
+}
+export function useExpertContent(){
+ const selected=useLocale(),locale=selected==='ko'?'ko':'en';
+ return {profile(profile:Pick<ExpertProfile,'localizedContent'|'originalLanguage'|'bio'|'experience'|'specialties'>,field:keyof typeof profileLabels){const fallback=field==='bio'?profile.bio:field==='experience'?profile.experience:field==='specialtiesDescription'?profile.specialties.join(', '):profile.localizedContent?.[profile.originalLanguage]?.portfolioDescription||'';return {text:localizedText(profile.localizedContent,locale,field,fallback),fallback:!profile.localizedContent?.[locale]?.[field]&&locale!==profile.originalLanguage,language:profile.originalLanguage}},service(service:Pick<ExpertService,'localizedContent'|'originalLanguage'|'description'|'scope'|'conditions'>,field:keyof typeof serviceLabels){return {text:localizedText(service.localizedContent,locale,field,service[field]),fallback:!service.localizedContent?.[locale]?.[field]&&locale!==service.originalLanguage,language:service.originalLanguage}}};
+}
+export function ExpertContentNotice({fallback,language}:{fallback:boolean;language:'en'|'ko'}){
+ const t=useCopy('experts');
+ return <small className="expert-content-language">{fallback?t('Translation not supplied. Showing original {language} content.',{language:t(language==='ko'?t("Korean"):t("English"))}):t('Content provided by the expert. No automated translation was generated.')}</small>
+}
