@@ -18,6 +18,7 @@ const Output=z.object({sourceIds:z.array(z.string()).max(12),questions:z.array(z
  review:z.object({proposedStatus:z.enum(['applicable','not_applicable','insufficient_data','review_required']),missingFacts:z.array(z.string().max(120)).max(50),counterexampleFactKeys:z.array(z.string().max(120)).max(50)}).strict().optional(),
  telemetry:z.object({latencyMs:z.number().finite().nonnegative(),promptTokens:z.number().int().nonnegative().nullable(),completionTokens:z.number().int().nonnegative().nullable(),totalTokens:z.number().int().nonnegative().nullable()}).strict().optional()
 }).strict();
+export function sourceRevisions(){return Object.fromEntries(sources.map(source=>[source.id,{revision:createHash('sha256').update(JSON.stringify(source)).digest('hex'),reviewedAt:source.reviewedAt}]));}
 export function issueFingerprint(topic:string,company:Company):string {
  const keys=TOPIC_FACTS[topic]??Object.keys(company).filter(k=>!['id','name','updatedAt'].includes(k));
  const facts=Object.fromEntries([...keys].sort().map(k=>[k,company[k as keyof Company]]));
@@ -58,7 +59,7 @@ export async function quickAssess(company:Company,scenarioId:string):Promise<Ass
  return sourceCheckedClone({
   id:randomUUID(),scenarioId,kind:'quick',findings:evaluateRules(company,scenarioId),questions:[],coverage:[...ROOT_TOPICS],
   limitations:[...BASE_LIMITATIONS,'Quick assessment: deterministic source-based screening only. NVIDIA deep review was not requested.'],
-  partial:false,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,modelStatus:'not_requested',
+  partial:false,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,sourceRevisions:sourceRevisions(),modelStatus:'not_requested',
   metrics:{nodes:ROOT_TOPICS.length,modelCalls:0,maxDepth:0,latencyMs:0,promptTokens:null,completionTokens:null,totalTokens:null}
  },Date.now());
 }
@@ -75,7 +76,7 @@ export async function assess(company:Company,scenarioId:string,model?:LegalModel
  if(!model)limitations.push('NVIDIA unavailable: no model review was performed. Findings below are deterministic source-based screening only.');
  const snapshot=(unfinished:boolean):Assessment=>sourceCheckedClone({
   id:assessmentId,scenarioId,kind:'deep',findings,questions:[...questions],coverage:ROOT_TOPICS,
-  limitations:[...new Set(limitations)],partial:unfinished||partial,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,
+  limitations:[...new Set(limitations)],partial:unfinished||partial,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,sourceRevisions:sourceRevisions(),
   modelStatus:modelAvailable?'available':model&&unfinished?'pending':'unavailable',
   metrics:{nodes,modelCalls,maxDepth,latencyMs,promptTokens:modelCalls?usage.promptTokens:null,completionTokens:modelCalls?usage.completionTokens:null,totalTokens:modelCalls?usage.totalTokens:null}
  },options.now??Date.now());

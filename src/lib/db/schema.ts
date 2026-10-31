@@ -95,3 +95,5 @@ export const tasks=projectTable('tasks');
 export const reviewJobs=projectTable('review_jobs');
 export const projectActivity=projectTable('project_activity');
 export const documents=projectTable('documents');
+
+export const changeImpacts=projectTable('change_impacts');

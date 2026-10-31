@@ -5,7 +5,7 @@ import {authorizeProject} from '../organizations';
 import type {Workspace} from '../contracts';
 import {createRepository,type WorkspaceStore} from './index';
 export type ProjectScope={user:{id:string;name:string;email:string};organizationId:string;projectId:string;role:string};
-const tables={company:'company_profiles',scenarios:'scenarios',assessments:'assessments',tasks:'tasks',reviewJobs:'review_jobs',activity:'project_activity'} as const;
+const tables={company:'company_profiles',scenarios:'scenarios',assessments:'assessments',tasks:'tasks',reviewJobs:'review_jobs',activity:'project_activity',impacts:'change_impacts'} as const;
 async function transaction<T>(scope:ProjectScope,write:boolean,run:(client:PoolClient)=>Promise<T>):Promise<T>{
  const client=await getPool().connect();
  try{
@@ -19,7 +19,7 @@ async function transaction<T>(scope:ProjectScope,write:boolean,run:(client:PoolC
  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
 async function read(client:PoolClient,scope:ProjectScope):Promise<Workspace>{
- const workspace:Workspace={company:null,scenarios:[],assessments:[],tasks:[],activity:[],reviewJobs:[]};
+ const workspace:Workspace={company:null,scenarios:[],assessments:[],tasks:[],activity:[],reviewJobs:[],impacts:[]};
  for(const [key,table] of Object.entries(tables)){
   const {rows}=await client.query("SELECT payload FROM "+table+" WHERE organization_id=$1 AND project_id=$2 ORDER BY COALESCE((payload->>'_order')::int,0),id",[scope.organizationId,scope.projectId]);
   const values=rows.map(({payload})=>{const {_order,...value}=payload;return value;});

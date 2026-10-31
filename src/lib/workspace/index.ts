@@ -1,8 +1,9 @@
+import {z} from 'zod';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { CompanySchema, ScenarioInputSchema, TaskInputSchema } from '../contracts';
-import type { Assessment, Company, Scenario, Task, Workspace, ReviewJob } from '../contracts';
+import type { Assessment, Company, Scenario, Task, Workspace, ReviewJob, ChangeImpact } from '../contracts';
 
 type TaskInput = Omit<Task, 'id' | 'updatedAt'>;
 export interface WorkspaceRepository {
@@ -19,14 +20,17 @@ export interface WorkspaceRepository {
   updateReviewJob(id: string, patch: Partial<ReviewJob>, expectedCompany?: Company): Promise<ReviewJob>;
   getReviewJob(id: string): Promise<ReviewJob>;
   recoverReviewJobs(activeIds: string[]): Promise<void>;
+  getImpact(id:string):Promise<ChangeImpact>;
+  linkImpactTask(id:string,input:{taskId?:string;title?:string;assignee?:string|null}):Promise<{impact:ChangeImpact;task:Task}>;
+  reconcileSources(current:Record<string,{revision:string;reviewedAt:string}>):Promise<ChangeImpact[]>;
 }
-const empty = (): Workspace => ({company:null, scenarios:[],tasks:[],activity:[],assessments:[],reviewJobs:[]});
+const empty = (): Workspace => ({company:null, scenarios:[],tasks:[],activity:[],assessments:[],reviewJobs:[],impacts:[]});
 const clone = <T>(value:T):T => structuredClone(value);
 const now = () => new Date().toISOString();
 const queues = new Map<string, Promise<unknown>>();
 export function changedFactKeys(previous: Company, next: Company): string[] {
   return Object.keys(next).filter(key => key !== 'updatedAt' && key !== 'id'
-    && JSON.stringify(previous[key as keyof Company]) !== JSON.stringify(next[key as keyof Company]));
+    && JSON.stringify(key==='targetStates'?[...new Set(previous.targetStates.map(v=>v.trim().toLowerCase()))].sort():previous[key as keyof Company]) !== JSON.stringify(key==='targetStates'?[...new Set(next.targetStates.map(v=>v.trim().toLowerCase()))].sort():next[key as keyof Company]));
 }
 function activity(state: Workspace, type:string, message:string) {
   state.activity.push({id:randomUUID(),at:now(),type,message});
@@ -43,8 +47,9 @@ function interruptJob(state:Workspace,job:ReviewJob,message:string) {
   }
   activity(state,'review.interrupted',message);
 }
-function invalidate(state: Workspace, scenarioId: string, keys: string[]) {
+function invalidate(state: Workspace, scenarioId: string, keys: string[],before:Company,after:Company,kind:ChangeImpact['kind']) {
   if (!keys.length) return;
+  const refs:ChangeImpact['findingRefs']=[];
   for(const assessment of state.assessments.filter(a=>a.scenarioId===scenarioId)) {
     const affected = assessment.findings.filter(f=>f.factKeys.some(k=>keys.includes(k)));
     if(!affected.length) continue;
@@ -53,9 +58,15 @@ function invalidate(state: Workspace, scenarioId: string, keys: string[]) {
     if (!assessment.limitations.includes(warning)) assessment.limitations.push(warning);
     for (const finding of affected) {
       finding.status='review_required';
+      finding.reviewState='reassessment_required';
+      refs.push({assessmentId:assessment.id,findingId:finding.id,topic:finding.topic});
       finding.summary='Facts changed — reassessment required. '+finding.summary.replace(/^Facts changed — reassessment required\. /,'');
     }
     activity(state,'assessment.invalidated', 'Affected findings require reassessment after '+keys.join(', '));
+  }
+  if(refs.length){
+    const impact:ChangeImpact={id:randomUUID(),scenarioId,kind,changedFields:[...keys],before:Object.fromEntries(keys.map(key=>[key,before[key as keyof Company]])),after:Object.fromEntries(keys.map(key=>[key,after[key as keyof Company]])),reason:'Changed facts ('+keys.join(', ')+') intersect the facts used by the referenced findings. Reassessment is required; no new legal conclusion or model review has been performed.',findingRefs:refs,createdAt:now(),taskIds:[]};
+    (state.impacts??=[]).push(impact);activity(state,'impact.created','Change impact recorded for '+refs.length+' related findings: '+keys.join(', '));
   }
   for(const job of state.reviewJobs??[]) {
     if(job.scenarioId!==scenarioId)continue;
@@ -83,8 +94,8 @@ export function createRepository(filePath: string,store?:WorkspaceStore): Worksp
       const parsed=JSON.parse(await readFile(path,'utf8')) as Workspace;
       if(!parsed || !Array.isArray(parsed.scenarios) || !Array.isArray(parsed.tasks)
         || !Array.isArray(parsed.activity) || !Array.isArray(parsed.assessments)
-        || !('company' in parsed) || (parsed.reviewJobs!==undefined && !Array.isArray(parsed.reviewJobs))) throw new Error('Workspace data is invalid; restore from backup.');
-      parsed.reviewJobs??=[];
+        || !('company' in parsed) || (parsed.reviewJobs!==undefined && !Array.isArray(parsed.reviewJobs)) || (parsed.impacts!==undefined && !Array.isArray(parsed.impacts))) throw new Error('Workspace data is invalid; restore from backup.');
+      parsed.reviewJobs??=[];parsed.impacts??=[];
       return parsed;
     } catch(error) {
       if((error as NodeJS.ErrnoException).code==='ENOENT') return empty();
@@ -119,8 +130,8 @@ export function createRepository(filePath: string,store?:WorkspaceStore): Worksp
         else {
           const current=state.scenarios[0];
           const keys=changedFactKeys(current.company,company);
-          current.company=clone(company);
-          invalidate(state,current.id,keys);
+          const before=clone(current.company);current.company=clone(company);
+          invalidate(state,current.id,keys,before,company,'company');
         }
         activity(state,prior?'company.updated':'company.created','Company profile saved');
         return company;
@@ -143,8 +154,8 @@ export function createRepository(filePath: string,store?:WorkspaceStore): Worksp
         if(validated.name!==undefined) scenario.name=validated.name;
         if(validated.company) {
           const keys=changedFactKeys(scenario.company,validated.company);
-          scenario.company={...validated.company,updatedAt:now()};
-          invalidate(state,id,keys);
+          const before=clone(scenario.company);scenario.company={...validated.company,updatedAt:now()};
+          invalidate(state,id,keys,before,scenario.company,'scenario');
           if(state.scenarios[0]?.id===id) state.company=clone(scenario.company);
         }
         activity(state,'scenario.updated','Scenario updated: '+scenario.name);
@@ -178,6 +189,7 @@ export function createRepository(filePath: string,store?:WorkspaceStore): Worksp
         const task=state.tasks.find(t=>t.id===id);
         if(!task) throw new Error('Not found');
         state.tasks=state.tasks.filter(t=>t.id!==id);
+        for(const impact of state.impacts??[])impact.taskIds=impact.taskIds.filter(taskId=>taskId!==id);
         activity(state,'task.deleted','Task deleted: '+task.title);
       });
     },
@@ -250,6 +262,87 @@ export function createRepository(filePath: string,store?:WorkspaceStore): Worksp
         for(const job of state.reviewJobs??[])if(activeJob(job)&&!activeIds.includes(job.id)) {
           interruptJob(state,job,'Review interrupted by process restart; saved findings are partial. Start a new review to continue.');
         }
+      });
+    },
+    getImpact(id) {
+      return serialized(async()=>{
+        const impact=((await read()).impacts??[]).find(i=>i.id===id);
+        if(!impact)throw new Error('Not found');
+        return clone(impact);
+      });
+    },
+    linkImpactTask(id,input) {
+      const value=z.object({taskId:z.string().min(1).optional(),title:z.string().trim().min(1).max(240).optional(),assignee:z.string().max(160).nullable().optional()}).strict().refine(v=>!v.taskId||v.title===undefined).parse(input);
+      return mutate(state=>{
+        const impact=(state.impacts??[]).find(i=>i.id===id);
+        if(!impact)throw new Error('Not found');
+        let task:Task|undefined;
+        if(value.taskId){
+          task=state.tasks.find(t=>t.id===value.taskId);
+          if(!task)throw new Error('Not found');
+        }else{
+          const finding=impact.findingRefs[0];
+          if(!finding||!state.assessments.some(a=>a.id===finding.assessmentId&&a.findings.some(f=>f.id===finding.findingId)))throw new Error('Not found');
+          const title=value.title??'Review change: '+finding.topic,assignee=value.assignee??null;
+          task=state.tasks.find(t=>impact.taskIds.includes(t.id)&&t.title===title&&t.assignee===assignee&&t.findingId===finding.findingId);
+          if(!task){
+            task={id:randomUUID(),findingId:finding.findingId,title,assignee,status:'todo',notes:impact.reason,evidenceRefs:[],updatedAt:now()};
+            state.tasks.push(task);activity(state,'task.created','Task created from change impact: '+title);
+          }
+        }
+        if(!impact.taskIds.includes(task.id)){
+          impact.taskIds.push(task.id);activity(state,'impact.task_linked','Task linked to change impact: '+task.title);
+        }
+        return {impact,task};
+      });
+    },
+    reconcileSources(current) {
+      const registry=z.record(z.string(),z.object({revision:z.string().min(1),reviewedAt:z.string().min(1)}).strict()).parse(current);
+      return mutate(state=>{
+        const pending=new Map<string,{sources:Set<string>;before:Record<string,{assessments:{assessmentId:string;revision:string;reviewedAt:string}[]}>;after:Record<string,unknown>;refs:ChangeImpact['findingRefs']}>();
+        const affectedAssessments=new Set<string>();
+        for(const assessment of state.assessments){
+          for(const finding of assessment.findings){
+            const changed:string[]=[];
+            for(const sourceId of finding.sourceIds){
+              const prior=assessment.sourceRevisions?.[sourceId];
+              if(!prior)continue; // Legacy provenance is unknown, never fabricate a change baseline.
+              const next=registry[sourceId]??null;
+              if(next&&next.revision===prior.revision&&next.reviewedAt===prior.reviewedAt)continue;
+              const seen=(state.impacts??[]).some(i=>i.kind==='source'&&i.scenarioId===assessment.scenarioId&&i.findingRefs.some(r=>r.assessmentId===assessment.id&&r.findingId===finding.id)&&i.sourceIds?.includes(sourceId)&&(
+                next===null?i.after[sourceId]===null:
+                Boolean(i.after[sourceId]&&typeof i.after[sourceId]==='object'&&(i.after[sourceId] as {revision?:string}).revision===next.revision&&(i.after[sourceId] as {reviewedAt?:string}).reviewedAt===next.reviewedAt)
+              ));
+              if(seen)continue;
+              changed.push(sourceId);
+              let event=pending.get(assessment.scenarioId);
+              if(!event){event={sources:new Set(),before:{},after:{},refs:[]};pending.set(assessment.scenarioId,event);}
+              event.sources.add(sourceId);event.after[sourceId]=next;
+              const baselines=(event.before[sourceId]??={assessments:[]}).assessments;
+              if(!baselines.some(b=>b.assessmentId===assessment.id))baselines.push({assessmentId:assessment.id,...prior});
+            }
+            if(!changed.length)continue;
+            const event=pending.get(assessment.scenarioId)!;
+            event.refs.push({assessmentId:assessment.id,findingId:finding.id,topic:finding.topic});
+            affectedAssessments.add(assessment.id);assessment.partial=true;
+            finding.status='review_required';finding.reviewState='reassessment_required';
+            const warning='Source registry revision or reviewed date changed for '+changed.join(', ')+'. Reassessment is required; source content and legal applicability have not been re-reviewed.';
+            if(!assessment.limitations.includes(warning))assessment.limitations.push(warning);
+            if(!finding.summary.includes(warning))finding.summary+=' '+warning;
+          }
+        }
+        const created:ChangeImpact[]=[];
+        for(const [scenarioId,event] of pending){
+          const impact:ChangeImpact={id:randomUUID(),scenarioId,kind:'source',changedFields:[...event.sources],sourceIds:[...event.sources],before:event.before,after:event.after,reason:'Curated source registry metadata differs from the recorded assessment provenance. Only findings referencing the changed source IDs require reassessment. This check does not fetch new legal content or run a model.',findingRefs:event.refs,createdAt:now(),taskIds:[]};
+          (state.impacts??=[]).push(impact);created.push(impact);activity(state,'impact.created','Source impact recorded for '+event.refs.length+' related findings: '+[...event.sources].join(', '));
+        }
+        for(const job of state.reviewJobs??[]){
+          if(!job.assessmentId||!affectedAssessments.has(job.assessmentId))continue;
+          const assessment=state.assessments.find(a=>a.id===job.assessmentId);
+          if(assessment)job.result=clone(assessment);
+          if(activeJob(job))interruptJob(state,job,'A referenced source changed during review; saved findings are partial and require reassessment.');
+        }
+        return created;
       });
     },
     getAssessment(id) {
