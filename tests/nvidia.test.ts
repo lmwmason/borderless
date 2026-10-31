@@ -14,3 +14,10 @@ test('NVIDIA credentials stay in server request and hostile model sources are re
  await assert.rejects(nvidiaModel({topic:'employment',facts:{},sourceIds:[]}));
  }finally{globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.NVIDIA_API_KEY;else process.env.NVIDIA_API_KEY=oldKey;if(oldModel===undefined)delete process.env.NVIDIA_MODEL;else process.env.NVIDIA_MODEL=oldModel;}
 });
+
+test('mutation origin uses HTTP Host when standalone normalizes internal request URL',async()=>{
+ const {readBody}=await import('../src/lib/http');
+ const body=await readBody(new Request('http://localhost:3218/api/company',{method:'PUT',headers:{host:'127.0.0.1:3218',origin:'http://127.0.0.1:3218'},body:'{}'}));
+ assert.deepEqual(body,{});
+ await assert.rejects(readBody(new Request('http://localhost:3218/api/company',{method:'PUT',headers:{host:'127.0.0.1:3218',origin:'https://attacker.example','x-forwarded-host':'attacker.example'},body:'{}'})),/Cross-origin/);
+});

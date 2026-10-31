@@ -11,7 +11,13 @@ export async function handle(run:()=>Promise<unknown>):Promise<Response>{
 }
 export async function readBody(request:Request){
  const origin=request.headers.get('origin');
- if(origin && origin!==new URL(request.url).origin) throw new ApiError(403,'ORIGIN','Cross-origin mutation denied.');
+ if(origin){
+  // Next standalone can normalize request.url to its bind address. Host is the
+  // HTTP authority sent by the browser; do not trust arbitrary forwarded hosts.
+  let sameOrigin=false;
+  try {const parsed=new URL(origin);sameOrigin=['http:','https:'].includes(parsed.protocol) && parsed.host===(request.headers.get('host')||new URL(request.url).host);}catch{}
+  if(!sameOrigin)throw new ApiError(403,'ORIGIN','Cross-origin mutation denied.');
+ }
  const text=await request.text();if(text.length>64000)throw new ApiError(413,'TOO_LARGE','Request too large.');
  return JSON.parse(text);
 }
