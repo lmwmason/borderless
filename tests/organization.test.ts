@@ -114,10 +114,13 @@ test('paid checkout is unavailable, forged activation fails, canceled/expired en
  await getPool().query("UPDATE subscriptions SET expires_at=now()-interval '1 minute' WHERE organization_id=$1",[org.id]);
  await assert.rejects(repo.getWorkspace(),codeError('ORGANIZATION_INACTIVE'));
  await getPool().query('UPDATE subscriptions SET expires_at=NULL WHERE organization_id=$1',[org.id]);
+ await billingService.selectPlan(owner.user,org.id,'Enterprise');
  await billingService.requestEnterprise(owner.user,org.id,{notes:'Synthetic enterprise inquiry, no contract approval'});
  assert.equal((await billingService.get(owner.user,org.id)).enterpriseRequest?.status,'Pending');
- assert.equal((await billingService.get(owner.user,org.id)).plan,'Free','enterprise inquiry never self-provisions paid access');
- assert.equal((await repo.getWorkspace()).company?.name,company.name);
+ assert.equal((await billingService.get(owner.user,org.id)).plan,'Enterprise','inquiry retains selected plan without provisioning paid access');
+ assert.equal((await billingService.get(owner.user,org.id)).organizationStatus,'Draft');
+ assert.equal((await billingService.get(owner.user,org.id)).subscription.status,'Pending');
+ await assert.rejects(repo.getWorkspace(),codeError('ORGANIZATION_INACTIVE'));
 });
 
 test('organization action rate limits are persisted and atomic per authenticated user',async()=>{

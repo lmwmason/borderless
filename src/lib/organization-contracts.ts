@@ -7,5 +7,5 @@ export type ProjectSummary={id:string;organizationId:string;workspaceId:string;n
 export type Membership={id:string;userId:string;name:string;email:string;role:Role};
 export type JoinRequest={id:string;userId:string;name:string;email:string;status:'pending'|'approved'|'rejected';createdAt:string};
 export type InviteSummary={id:string;expiresAt:string;revokedAt:string|null;createdAt:string};
-export type AccountOverview={user:AccountUser|null;organizations:OrganizationSummary[];pending:{organizationId:string;organizationName:string;status:string}[]};
+export type AccountOverview={user:AccountUser|null;organizations:OrganizationSummary[];pending:{organizationId:string;organizationName:string;status:string}[];platformAdmin?:boolean};
 export type OrganizationDetail={organization:OrganizationSummary;members:Membership[];requests:JoinRequest[];invites:InviteSummary[];projects:ProjectSummary[]};

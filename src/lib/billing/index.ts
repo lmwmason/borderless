@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
+import {enqueueNotification} from '../notifications';
 import type {AccountUser,Plan} from '../organization-contracts';
 import {getPool} from '../db';
 import {ApiError} from '../http';
@@ -16,8 +17,8 @@ async function snapshot(client:QueryClient,userId:string,orgId:string){
  if(org.status!=='Active'&&!['Owner','Admin'].includes(org.role))throw new ApiError(403,'ORGANIZATION_INACTIVE','Organization activation is required.');
  const subscription=(await client.query('SELECT status,expires_at FROM subscriptions WHERE organization_id=$1',[orgId])).rows[0];
  const acceptance=(await client.query('SELECT id FROM contract_acceptances WHERE organization_id=$1 AND terms_version=$2 AND terms_hash=$3 LIMIT 1',[orgId,TERMS_VERSION,TERMS_HASH])).rows[0];
- const enterprise=(await client.query('SELECT id,status,created_at FROM enterprise_requests WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 1',[orgId])).rows[0];
- return {plan:org.plan as Plan,organizationStatus:org.status,subscription:{status:subscription?.status??'Pending',expiresAt:subscription?.expires_at?new Date(subscription.expires_at).toISOString():null},termsVersion:TERMS_VERSION,termsText:TERMS_TEXT,accepted:Boolean(acceptance),checkoutAvailable:false,configurationMessage,enterpriseRequest:enterprise?{id:enterprise.id,status:enterprise.status,createdAt:new Date(enterprise.created_at).toISOString()}:null};
+ const enterprise=(await client.query('SELECT id,status,created_at,notes,company_snapshot FROM enterprise_requests WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 1',[orgId])).rows[0];
+ return {plan:org.plan as Plan,organizationStatus:org.status,subscription:{status:subscription?.status??'Pending',expiresAt:subscription?.expires_at?new Date(subscription.expires_at).toISOString():null},termsVersion:TERMS_VERSION,termsText:TERMS_TEXT,accepted:Boolean(acceptance),checkoutAvailable:false,configurationMessage,enterpriseRequest:enterprise?{id:enterprise.id,status:enterprise.status,notes:enterprise.notes,companyInfo:enterprise.company_snapshot,createdAt:new Date(enterprise.created_at).toISOString()}:null};
 }
 
 export const billingService={
@@ -78,14 +79,21 @@ export const billingService={
    return snapshot(client,user.id,orgId);
   });
  },
- async requestEnterprise(user:AccountUser,orgId:string,input:{notes:string}){
-  const notes=z.string().trim().min(1).max(5000).parse(input.notes);
+ async requestEnterprise(user:AccountUser,orgId:string,input:{notes:string;idempotencyKey?:string}){
+  const value=z.object({notes:z.string().trim().min(1).max(5000),idempotencyKey:z.string().uuid().optional()}).strict().parse(input);
+  const notes=value.notes,fingerprint=createHash('sha256').update(notes).digest('hex');
   return transaction(async client=>{
-   await organizationAccess(client,user.id,orgId,{admin:true,lock:true});
-   const pending=(await client.query("SELECT id FROM enterprise_requests WHERE organization_id=$1 AND status='Pending' LIMIT 1",[orgId])).rows[0];
-   if(pending)throw new ApiError(409,'REQUEST_PENDING','An enterprise request is already pending.');
+   const organization=await organizationAccess(client,user.id,orgId,{admin:true,lock:true});
+   if(organization.plan!=='Enterprise')throw new ApiError(409,'ENTERPRISE_PLAN_REQUIRED','Select Enterprise before submitting an introduction inquiry.');
+   if(value.idempotencyKey){
+    const prior=(await client.query('SELECT id,request_fingerprint FROM enterprise_requests WHERE organization_id=$1 AND request_key=$2',[orgId,value.idempotencyKey])).rows[0];
+    if(prior){if(prior.request_fingerprint!==fingerprint)throw new ApiError(409,'IDEMPOTENCY_CONFLICT','This request key was used for different inquiry content.');return snapshot(client,user.id,orgId);}
+   }
+   const pending=(await client.query("SELECT id,notes FROM enterprise_requests WHERE organization_id=$1 AND status in ('Pending','In Review') LIMIT 1",[orgId])).rows[0];
+   if(pending){if(pending.notes===notes)return snapshot(client,user.id,orgId);throw new ApiError(409,'REQUEST_PENDING','An enterprise request is already pending.');}
    const id=uuid();
-   await client.query("INSERT INTO enterprise_requests(id,organization_id,requested_by,status,notes,created_at) VALUES($1,$2,$3,'Pending',$4,now())",[id,orgId,user.id,notes]);
+   await client.query("INSERT INTO enterprise_requests(id,organization_id,requested_by,status,notes,company_snapshot,request_key,request_fingerprint,created_at) VALUES($1,$2,$3,'Pending',$4,$5,$6,$7,now())",[id,orgId,user.id,notes,{organizationId:orgId,companyName:organization.name,requesterId:user.id,requesterName:user.name,requesterEmail:user.email,requestedPlan:'Enterprise'},value.idempotencyKey??null,fingerprint]);
+   await enqueueNotification(client,{inquiryId:id,companyName:organization.name,inquiryType:'Enterprise introduction',createdAt:new Date().toISOString()});
    await audit(client,user.id,orgId,'billing.enterprise_requested',{requestId:id});
    return snapshot(client,user.id,orgId);
   });

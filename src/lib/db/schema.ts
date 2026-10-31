@@ -67,9 +67,11 @@ export const contractAcceptances=pgTable('contract_acceptances',{
 },t=>[index('contract_org_idx').on(t.organizationId),index('contract_actor_idx').on(t.actorId)]);
 export const enterpriseRequests=pgTable('enterprise_requests',{
  id:text('id').primaryKey(),organizationId:text('organization_id').notNull().references(()=>organizations.id,{onDelete:'cascade'}),
- requestedBy:text('requested_by').notNull().references(()=>authUser.id),status:text('status').notNull().default('Pending'),notes:text('notes').notNull().default(''),
- createdAt:time('created_at').notNull().defaultNow(),reviewedAt:time('reviewed_at')
-},t=>[index('enterprise_org_idx').on(t.organizationId),index('enterprise_requester_idx').on(t.requestedBy),check('enterprise_status_check',sql`${t.status} in ('Pending','Approved','Rejected')`)]);
+ requestedBy:text('requested_by').notNull().references(()=>authUser.id),status:text('status').notNull().default('Pending'),notes:text('notes').notNull().default(''),companySnapshot:jsonb('company_snapshot').notNull().default({}),
+ createdAt:time('created_at').notNull().defaultNow(),reviewedAt:time('reviewed_at'),reviewedBy:text('reviewed_by').references(()=>authUser.id),reviewNotes:text('review_notes').notNull().default(''),
+ salesStatus:text('sales_status').notNull().default('New'),assigneeId:text('assignee_id').references(()=>authUser.id,{onDelete:'set null'}),updatedAt:time('updated_at').notNull().defaultNow(),
+ requestKey:text('request_key'),requestFingerprint:text('request_fingerprint')
+},t=>[index('enterprise_org_idx').on(t.organizationId),index('enterprise_requester_idx').on(t.requestedBy),index('enterprise_reviewer_idx').on(t.reviewedBy),index('enterprise_sales_updated_idx').on(t.salesStatus,t.updatedAt),index('enterprise_assignee_updated_idx').on(t.assigneeId,t.updatedAt),uniqueIndex('enterprise_request_key_unique').on(t.organizationId,t.requestKey),check('enterprise_sales_status_check',sql`${t.salesStatus} in ('New','Contacted','Negotiating','Won','Lost')`),check('enterprise_status_check',sql`${t.status} in ('Pending','In Review','Closed','Approved','Rejected')`)]);
 export const paymentEvents=pgTable('payment_events',{
  id:text('id').primaryKey(),organizationId:text('organization_id').notNull().references(()=>organizations.id,{onDelete:'cascade'}),
  providerEventId:text('provider_event_id'),eventType:text('event_type').notNull(),verified:boolean('verified').notNull().default(false),payload:jsonb('payload').notNull().default({}),createdAt:time('created_at').notNull().defaultNow()
@@ -98,6 +100,9 @@ export const documents=projectTable('documents');
 
 export const changeImpacts=projectTable('change_impacts');
 
+
+// Expert private rows are actor scoped; sanitized directory views are installed
+// by the additive migration and run under the dedicated owner view context.
 const actor=sql`(select current_setting('borderless.user_id',true))`;
 const reviewer=sql`(select current_setting('borderless.expert_reviewer',true)) = 'on'`;
 const companyRead=(org:unknown)=>sql`exists(select 1 from memberships m where m.organization_id=${org} and m.user_id=${actor} and m.role in ('Owner','Admin','Member','Viewer'))`;
@@ -164,3 +169,41 @@ export const engagementEvents=pgTable('engagement_events',{
 
 // Platform authority is explicitly synchronized from server configuration. No
 // organization membership, signup or browser-supplied role provisions access.
+const platformProvisioner=sql`(select current_setting('borderless.platform_provisioner',true))='on'`;
+const platformFlag=sql`(select current_setting('borderless.platform_actor',true))='on'`;
+const notificationWorker=sql`(select current_setting('borderless.notification_worker',true))='on'`;
+export const platformOperatorGrants=pgTable('platform_operator_grants',{
+ userId:text('user_id').primaryKey().references(()=>authUser.id),active:boolean('active').notNull().default(false),source:text('source').notNull().default('server_environment'),
+ provisionedAt:time('provisioned_at').notNull().defaultNow(),revokedAt:time('revoked_at'),updatedAt:time('updated_at').notNull().defaultNow()
+},t=>[
+ pgPolicy('platform_grants_read',{for:'select',to:'public',using:sql`${platformProvisioner} or ${platformFlag}`}),
+ pgPolicy('platform_grants_insert',{for:'insert',to:'public',withCheck:platformProvisioner}),
+ pgPolicy('platform_grants_update',{for:'update',to:'public',using:platformProvisioner,withCheck:platformProvisioner})
+]).enableRLS();
+const platformAccess=sql`${platformFlag} and exists(select 1 from platform_operator_grants g where g.user_id=${actor} and g.active)`;
+export const salesInquiryNotes=pgTable('sales_inquiry_notes',{
+ id:text('id').primaryKey(),inquiryId:text('inquiry_id').notNull().references(()=>enterpriseRequests.id),authorId:text('author_id').notNull().references(()=>authUser.id),body:text('body').notNull(),createdAt:time('created_at').notNull().defaultNow()
+},t=>[
+ index('sales_note_inquiry_date_idx').on(t.inquiryId,t.createdAt),index('sales_note_author_idx').on(t.authorId),
+ pgPolicy('sales_notes_read',{for:'select',to:'public',using:platformAccess}),
+ pgPolicy('sales_notes_insert',{for:'insert',to:'public',withCheck:sql`${platformAccess} and ${t.authorId}=${actor}`})
+]).enableRLS();
+export const salesInquiryActivity=pgTable('sales_inquiry_activity',{
+ id:text('id').primaryKey(),inquiryId:text('inquiry_id').notNull().references(()=>enterpriseRequests.id),actorId:text('actor_id').references(()=>authUser.id),action:text('action').notNull(),detail:jsonb('detail').notNull().default({}),createdAt:time('created_at').notNull().defaultNow()
+},t=>[
+ index('sales_activity_inquiry_date_idx').on(t.inquiryId,t.createdAt),index('sales_activity_actor_idx').on(t.actorId),
+ pgPolicy('sales_activity_read',{for:'select',to:'public',using:platformAccess}),
+ pgPolicy('sales_activity_insert',{for:'insert',to:'public',withCheck:sql`(${platformAccess} and ${t.actorId}=${actor}) or (${platformProvisioner} and ${t.actorId} is null and ${t.action}='sales.assignee_unassigned')`})
+]).enableRLS();
+export const notificationOutbox=pgTable('notification_outbox',{
+ id:text('id').primaryKey(),event:text('event').notNull(),channel:text('channel').notNull(),aggregateId:text('aggregate_id').notNull(),payload:jsonb('payload').notNull(),
+ status:text('status').notNull().default('Pending'),attempts:integer('attempts').notNull().default(0),nextAttemptAt:time('next_attempt_at').defaultNow(),
+ leaseToken:text('lease_token'),leaseExpiresAt:time('lease_expires_at'),errorCategory:text('error_category'),uncertain:boolean('uncertain').notNull().default(false),providerMessageId:text('provider_message_id'),
+ createdAt:time('created_at').notNull().defaultNow(),updatedAt:time('updated_at').notNull().defaultNow(),sentAt:time('sent_at')
+},t=>[
+ uniqueIndex('notification_event_aggregate_unique').on(t.event,t.channel,t.aggregateId),index('notification_due_idx').on(t.status,t.nextAttemptAt),index('notification_lease_idx').on(t.leaseExpiresAt),index('notification_aggregate_idx').on(t.aggregateId),
+ check('notification_status_check',sql`${t.status} in ('Pending','Sent','Failed','Retry Scheduled','Disabled')`),check('notification_attempts_check',sql`${t.attempts}>=0`),
+ pgPolicy('notification_read',{for:'select',to:'public',using:sql`${platformAccess} or ${notificationWorker}`}),
+ pgPolicy('notification_insert',{for:'insert',to:'public',withCheck:sql`${platformAccess} or ${notificationWorker}`}),
+ pgPolicy('notification_update',{for:'update',to:'public',using:sql`${platformAccess} or ${notificationWorker}`,withCheck:sql`${platformAccess} or ${notificationWorker}`})
+]).enableRLS();

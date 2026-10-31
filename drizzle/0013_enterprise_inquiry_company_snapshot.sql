@@ -1,0 +1,1 @@
+ALTER TABLE "enterprise_requests" ADD COLUMN "company_snapshot" jsonb DEFAULT '{}'::jsonb NOT NULL;

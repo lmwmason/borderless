@@ -92,6 +92,41 @@
       "when": 1793425485559,
       "tag": "0012_expert_cancel_and_entry_privileges",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793425890748,
+      "tag": "0013_enterprise_inquiry_company_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793426218715,
+      "tag": "0014_enterprise_operator_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793426259321,
+      "tag": "0015_enterprise_reviewer_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793426819185,
+      "tag": "0016_enterprise_sales_crm",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793426933716,
+      "tag": "0017_sales_crm_security",
+      "breakpoints": true
     }
   ]
 }

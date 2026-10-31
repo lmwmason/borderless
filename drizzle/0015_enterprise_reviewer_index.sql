@@ -1,0 +1,1 @@
+CREATE INDEX "enterprise_reviewer_idx" ON "enterprise_requests" USING btree ("reviewed_by");
