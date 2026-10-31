@@ -9,13 +9,13 @@ test('opening configured payment link never activates subscription; server requi
  const owner=await ownerProject('pricing'),outside=await register('pricing-outsider'),old=process.env.GROBLE_STARTUP_PAYMENT_URL;
  try{
  process.env.GROBLE_STARTUP_PAYMENT_URL='https://www.groble.im/test-only-product';
- await assert.rejects(paymentLink(owner.user,owner.organization.id,'Startup'),/Save this plan/);
+ await assert.rejects(paymentLink(owner.user,owner.organization.id,'Startup','ko'),/Save this plan/);
  await billingService.selectPlan(owner.user,owner.organization.id,'Startup');
- const link=await paymentLink(owner.user,owner.organization.id,'Startup');assert.equal(link.verificationPending,true);
+ const link=await paymentLink(owner.user,owner.organization.id,'Startup','ko');assert.equal(link.verificationPending,true);
  assert.equal((await billingService.get(owner.user,owner.organization.id)).subscription.status,'Pending');assert.equal((await billingService.get(owner.user,owner.organization.id)).organizationStatus,'Draft');
- await assert.rejects(paymentLink(outside.user,owner.organization.id,'Startup'));
- delete process.env.GROBLE_STARTUP_PAYMENT_URL;await assert.rejects(paymentLink(owner.user,owner.organization.id,'Startup'),/configured/);
- const fresh=await organizationService.create(owner.user,{name:'Unaccepted pricing terms'});await billingService.selectPlan(owner.user,fresh.id,'Startup');await assert.rejects(paymentLink(owner.user,fresh.id,'Startup'),/Accept the current/);
+ await assert.rejects(paymentLink(outside.user,owner.organization.id,'Startup','ko'));
+ delete process.env.GROBLE_STARTUP_PAYMENT_URL;await assert.rejects(paymentLink(owner.user,owner.organization.id,'Startup','ko'),/configured/);
+ const fresh=await organizationService.create(owner.user,{name:'Unaccepted pricing terms'});await billingService.selectPlan(owner.user,fresh.id,'Startup');await assert.rejects(paymentLink(owner.user,fresh.id,'Startup','ko'),/Accept the current/);
  }finally{if(old===undefined)delete process.env.GROBLE_STARTUP_PAYMENT_URL;else process.env.GROBLE_STARTUP_PAYMENT_URL=old;}
 });
 

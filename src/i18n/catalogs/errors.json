@@ -296,5 +296,20 @@
   "Your current terms acceptance is recorded separately from payment confirmation and enterprise agreements.": "현재 약관 동의는 결제 확인 및 Enterprise 계약과 별도로 기록됩니다.",
   "Your support request was recorded for platform review. No delivery or response-time guarantee is implied.": "플랫폼 담당자 검토를 위해 지원 요청을 기록했습니다. 전달이나 응답 시간은 보장되지 않습니다.",
   "callbackURL is required": "콜백 주소가 필요합니다.",
-  "id_token not supported": "해당 ID 토큰은 지원되지 않습니다."
+  "id_token not supported": "해당 ID 토큰은 지원되지 않습니다.",
+  "Upload a PNG, JPEG or WebP file.": "PNG, JPEG 또는 WebP 파일을 업로드해 주세요.",
+  "Logo files must be 2 MB or smaller.": "로고 파일은 2MB 이하여야 합니다.",
+  "Choose a logo file.": "로고 파일을 선택해 주세요.",
+  "The logo upload form is invalid.": "로고 업로드 양식이 올바르지 않습니다.",
+  "Choose a single logo file.": "로고 파일 하나를 선택해 주세요.",
+  "Too many logo uploads. Try again in a minute.": "로고 업로드 요청이 너무 많습니다. 1분 후 다시 시도해 주세요.",
+  "The logo upload expired. Upload the image again.": "로고 업로드 요청이 만료되었습니다. 이미지를 다시 업로드해 주세요.",
+  "The organization logo could not be saved. Please retry.": "조직 로고를 저장하지 못했습니다. 다시 시도해 주세요.",
+  "Organization logo not found.": "조직 로고를 찾을 수 없습니다.",
+  "Organization logo storage is temporarily unavailable.": "조직 로고 저장소를 일시적으로 사용할 수 없습니다.",
+  "Upload a valid, non-animated PNG, JPEG or WebP image.": "애니메이션이 아닌 올바른 PNG, JPEG 또는 WebP 이미지를 업로드해 주세요.",
+  "Organization logos must be no larger than 2 MiB.": "조직 로고는 2MiB 이하여야 합니다.",
+  "The safely encoded organization logo exceeds 2 MiB.": "안전하게 변환한 조직 로고가 2MiB를 초과합니다.",
+  "Checkout is currently available in Korean only. You can continue to the Korean checkout page.": "현재 결제는 한국어로만 제공됩니다. 한국어 결제 페이지로 이동할 수 있습니다.",
+  "Unable to open Korean checkout.": "한국어 결제 화면을 열지 못했습니다."
 }

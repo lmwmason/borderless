@@ -10,7 +10,7 @@ async function isolatedAdminSession(page:Page){
  const session=await (await page.request.get('/api/admin/session')).json();expect(session.user).toBeTruthy();return session;
 }
 
-test('public pricing truthfully disables unconfigured payment links without mutations',async({page})=>{
+test('public English pricing offers Korean checkout notice without payment mutations',async({page})=>{
  const mutations:string[]=[];
  page.on('request',request=>{if(['POST','PUT','PATCH','DELETE'].includes(request.method()))mutations.push(request.url())});
  await page.route('**/api/pricing',route=>route.fulfill({json:{plans:[{plan:'Free',amount:0,currency:'KRW',interval:'month',configured:true,requiresPayment:false},{plan:'Startup',amount:49000,currency:'KRW',interval:'month',configured:false,requiresPayment:true},{plan:'Business',amount:149000,currency:'KRW',interval:'month',configured:false,requiresPayment:true},{plan:'Enterprise',amount:null,currency:'KRW',interval:'custom',configured:true,requiresPayment:false}],paymentVerificationAvailable:false}}));
@@ -22,8 +22,8 @@ test('public pricing truthfully disables unconfigured payment links without muta
  await expect(page.getByRole('heading',{name:'Enterprise',exact:true})).toBeVisible();
  await expect(page.getByText('Custom pricing',{exact:true})).toBeVisible();
  await expect(page.getByRole('link',{name:'Contact sales',exact:true})).toHaveAttribute('href','/en/?auth=signin&intent=enterprise');
- await expect(page.getByRole('button',{name:'Select Startup',exact:true})).toBeDisabled();
- await expect(page.getByRole('button',{name:'Select Business',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'Select Startup',exact:true})).toBeEnabled();
+ await expect(page.getByRole('button',{name:'Select Business',exact:true})).toBeEnabled();
  await expect(page.locator('.pricing-amount').filter({hasText:/^₩0/})).toHaveCount(1);
  await expect(page.locator('.pricing-amount').filter({hasText:/^₩49,000/})).toHaveCount(1);
  await expect(page.locator('.pricing-amount').filter({hasText:'₩149,000'})).toHaveCount(1);

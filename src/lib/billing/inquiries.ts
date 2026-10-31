@@ -1,3 +1,4 @@
+import type {OrganizationLogoMetadata} from '../organization-contracts';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {PoolClient} from 'pg';
@@ -8,7 +9,7 @@ import {audit,limit,transaction} from '../organizations';
 import {notificationRecord} from '../notifications';
 export type InquiryStatus='Pending'|'In Review'|'Closed'|'Approved'|'Rejected';
 export type SalesStatus='New'|'Contacted'|'Negotiating'|'Won'|'Lost';
-export type OperatorInquiry={id:string;organizationId:string;companyName:string;requesterName:string;requesterEmail:string;notes:string;status:InquiryStatus;createdAt:string;reviewedAt:string|null;reviewNotes:string;salesStatus:SalesStatus;assigneeId:string|null;assigneeName:string|null;updatedAt:string};
+export type OperatorInquiry={id:string;organizationId:string;companyName:string;requesterName:string;requesterEmail:string;notes:string;status:InquiryStatus;createdAt:string;reviewedAt:string|null;reviewNotes:string;salesStatus:SalesStatus;assigneeId:string|null;assigneeName:string|null;updatedAt:string;organizationLogo?:OrganizationLogoMetadata|null};
 const Status=z.enum(['Pending','In Review','Closed','Approved','Rejected']);
 const Sales=z.enum(['New','Contacted','Negotiating','Won','Lost']);
 const Review=z.object({status:z.enum(['In Review','Closed','Rejected']),notes:z.string().trim().min(1).max(5000)}).strict();
@@ -65,7 +66,7 @@ export async function withPlatformActor<T>(user:AccountUser,run:(client:PoolClie
 export async function requirePlatformAdmin(request:Request):Promise<AccountUser>{
  const user=await requireAdmin(request);await syncPlatformOperators();await assertPlatformAdmin(user);return user;
 }
-const selectInquiry=`SELECT r.id,r.organization_id,
+const selectInquiry=`SELECT r.id,r.organization_id,(SELECT jsonb_build_object('id',l.id,'mimeType',l.mime_type,'bytes',l.bytes,'width',l.width,'height',l.height,'uploadedAt',l.uploaded_at) FROM organization_logos l WHERE l.organization_id=r.organization_id) AS organization_logo,
  coalesce(nullif(r.company_snapshot->>'companyName',''),o.name) AS company_name,
  coalesce(nullif(r.company_snapshot->>'requesterName',''),a.name,'') AS requester_name,
  coalesce(nullif(r.company_snapshot->>'requesterEmail',''),a.email,'') AS requester_email,
@@ -75,7 +76,7 @@ const selectInquiry=`SELECT r.id,r.organization_id,
  LEFT JOIN account_public a ON a.id=r.requested_by
  LEFT JOIN account_public assignee ON assignee.id=r.assignee_id`;
 const iso=(value:unknown)=>value instanceof Date?value.toISOString():String(value);
-function record(row:Record<string,any>):OperatorInquiry{return {id:row.id,organizationId:row.organization_id,companyName:row.company_name,requesterName:row.requester_name,requesterEmail:row.requester_email,notes:row.notes,status:row.status,createdAt:iso(row.created_at),reviewedAt:row.reviewed_at?iso(row.reviewed_at):null,reviewNotes:row.review_notes,salesStatus:row.sales_status,assigneeId:row.assignee_id??null,assigneeName:row.assignee_name??null,updatedAt:iso(row.updated_at)};}
+function record(row:Record<string,any>):OperatorInquiry{return {id:row.id,organizationId:row.organization_id,organizationLogo:row.organization_logo??null,companyName:row.company_name,requesterName:row.requester_name,requesterEmail:row.requester_email,notes:row.notes,status:row.status,createdAt:iso(row.created_at),reviewedAt:row.reviewed_at?iso(row.reviewed_at):null,reviewNotes:row.review_notes,salesStatus:row.sales_status,assigneeId:row.assignee_id??null,assigneeName:row.assignee_name??null,updatedAt:iso(row.updated_at)};}
 async function inquiry(client:PoolClient,id:string,lock=false){
  const row=(await client.query('SELECT id,organization_id,status,sales_status,assignee_id FROM enterprise_requests WHERE id=$1'+(lock?' FOR UPDATE':''),[idInput.parse(id)])).rows[0];
  if(!row)throw new ApiError(404,'NOT_FOUND','Introduction inquiry not found.');return row;

@@ -1,3 +1,13 @@
+# Logo and Korean-checkout release validation — 2026-10-31
+
+164/164 automated tests passed (0skips),26/26 browser tests passed in a clean1.2minute run, lint/typecheck/production build and dependency audit passed(0vulnerabilities). Actual Podman image0adafca2e374 passed restart tests including identical sanitized logo bytes/metadata through a separate disk-backed HTTPS SigV4 storage fixture. PNG/JPEG/WebP safety,2MiB limits,roles/RLS/IDOR,storage failure preservation,concurrent replacement, durable cleanup and admin views are covered. Paid cards now visibly lead to signin/company billing or an immediate English Korean-checkout notice. No real Groble page or payment was opened.
+
+User subsequently explicitly authorized GitHub Push and deployment. AXHub storage.enabled is prepared for provisioning; actual hosted logo storage remains to be checked after this release. Both new GROBLE_*_URL variables are server-only; direct payment confirmation and merchant return-URL configuration are not invented. Pricing returns remain verification-pending. Local presentation screenshots are generated4K16:9 English/Korean artifacts in pictures/, excluded from source/container uploads. Web DEMO seed:28accounts/8fictional unverified experts/3role-separated activeFreecompanies;2additional trustedlocalstaff accounts remainlocalonly. Credentials are ignored0600 .local/demo-accounts.json.
+
+Earlier release evidence follows.
+
+---
+
 # Release validation and AXHub registration — 2026-10-31
 
 Fresh isolated PostgreSQL automation:154/154 passed,0skips (41.68s after explicit Promise executor corrections). Fresh standalone HTTPS browser suite:19/19 passed in one clean run,0skips (51.0s). TypeScript, production build and a new correctness/security-focused ESLint gate pass. ESLint covers source/scripts/tests without weakening any existing tests;14 promise executors now explicitly discard their unused return values. Dev-tool minimatch is pinned to the patched11.0.1 release; complete npm audit reports0 vulnerabilities.

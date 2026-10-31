@@ -104,7 +104,7 @@ test('paid checkout is unavailable, forged activation fails, canceled/expired en
  const forged=await planRoute.PUT(scopedRequest('/api/organizations/'+org.id+'/billing/plan','PUT',owner.cookie,owner.project.id,{plan:'Startup',status:'Active'}),{params:Promise.resolve({id:org.id})});
  assert.equal(forged.status,400,'browser payload cannot assert a paid entitlement');
  const pending=await billingService.get(owner.user,org.id);assert.equal(pending.organizationStatus,'Draft');assert.equal(pending.subscription.status,'Pending');assert.equal(pending.checkoutAvailable,false);
- await assert.rejects(billingService.checkout(owner.user,org.id),codeError('CONFIG_REQUIRED'));
+ await assert.rejects(billingService.checkout(owner.user,org.id,'ko'),codeError('CONFIG_REQUIRED'));
  await assert.rejects(billingService.activateFree(owner.user,org.id),codeError('FREE_PLAN_REQUIRED'));
  await assert.rejects(authorizeProject(owner.user.id,owner.project.id),codeError('ORGANIZATION_INACTIVE'));
  const canceled=await billingService.cancel(owner.user,org.id);assert.equal(canceled.subscription.status,'Canceled');

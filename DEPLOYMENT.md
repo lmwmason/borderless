@@ -1,4 +1,4 @@
-# AXHub deployment preparation — no deployment executed
+# AXHub deployment preparation — local changes await approval
 
 ## Verified official infrastructure contract
 
@@ -57,8 +57,9 @@ proxy headers must be validated before setting BORDERLESS_TRUSTED_IP_HEADER.
   is in-process. Restarts mark unfinished jobs interrupted, retaining partial work.
 - Configure backup/restore policy and exercise recovery for managed PostgreSQL.
 - Email verification/password-reset delivery and account recovery are not wired.
-- Groble checkout/webhook verification and Enterprise contract fulfillment await
-  official merchant integration/account configuration; no live payment is possible.
+- Configured Groble hosted links require explicit Korean checkout consent. Provider
+  settlement/webhook verification and automatic paid activation remain unimplemented;
+  no real payment has been executed in this verification wave.
 - Review service terms and legal scope with a qualified human before commercial use.
 
 ## Approval gate
@@ -72,9 +73,34 @@ BORDERLESS_PLATFORM_ADMIN_IDS is a comma-separated trusted operator account-ID a
 
 SLACK_SALES_WEBHOOK_URL is a server secret. Native delivery additionally requires SLACK_SALES_DELIVERY_ENABLED=true and production mode; leave it false until separate Slack approval. BORDERLESS_PUBLIC_URL must be an explicitly confirmed public HTTPS origin before generating sales detail links. No localhost link or private inquiry body is sent. Durable notification jobs recover leases after restart; single-process scheduling is supported and database claims protect concurrent workers. Delivery cannot be exactly once across network ambiguity. See SLACK_SETUP.md for actual CLI observations and approval steps.
 
-No remote environment settings, Slack installation/channel, message or AXHub deployment has been executed. Groble hosted links may be configured using GROBLE_STARTUP_PAYMENT_URL/GROBLE_BUSINESS_PAYMENT_URL; they do not provide verified paid activation.
+No new remote environment settings, Slack messages or AXHub deployment were performed for the logo/Korean-checkout update. Hosted links use GROBLE_STARTUP_URL/GROBLE_BUSINESS_URL; legacy *_PAYMENT_URL names apply only when the new names are absent. The two new values are present only in ignored local configuration and are not copied into this document. Link configuration does not provide verified paid activation.
 
 ## Administrator bootstrap
 Set a distinct high-entropy BORDERLESS_ADMIN_AUTH_SECRET (at least32characters, different from BETTER_AUTH_SECRET). No administrator identity is auto-created on startup. A trusted operator supplies BORDERLESS_ADMIN_LOGIN/PASSWORD/NAME in a protected server environment and runs npm run admin:init after migrations. Non-demo passwords require at least16characters with mixed case, number and symbol; plaintext passwords are never inserted into the database. Existing accounts are not overwritten. Remove bootstrap password variables after provisioning. There is no public staff-registration endpoint.
 
-Local demo initialization requires NODE_ENV=development, BORDERLESS_LOCAL_ADMIN_DEMO=true and loopback application/runtime/auth/direct database URLs, then npm run admin:init -- --demo. Demo credentials exist only in ignored local server configuration and are never displayed by the UI or documented in source. Production rejects demo provisioning, sign-in, copied sessions and test contract rights. AXHub must use a separately provisioned non-demo identity. No production bootstrap or deployment has been executed.
+Local demo initialization requires NODE_ENV=development, BORDERLESS_LOCAL_ADMIN_DEMO=true and loopback application/runtime/auth/direct database URLs, then npm run admin:init -- --demo. Demo credentials exist only in ignored local server configuration and are never displayed by the UI or documented in source. Production rejects demo provisioning, sign-in, copied sessions and test contract rights. AXHub must use a separately provisioned non-demo identity. No production administrator bootstrap was performed for this update. The existing deployment at ac794a0 remains unchanged; the new logo/Korean-checkout code has not been pushed or deployed.
+
+
+## Private S3 logo storage — declared locally, not provisioned
+The local `axhub.yaml` now declares `storage.enabled:true`. This is deployment preparation only: it does not provision a bucket, inject credentials or enable the logo feature in the existing deployment. Actual AXHub storage provisioning, runtime injection, access controls, object persistence and cleanup must be verified after separate deployment approval.
+
+The server adapter requires `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY` and `STORAGE_SECRET_KEY`. Keep access/secret keys server-side and use the platform-provided S3 configuration. HTTPS is mandatory in production. `BORDERLESS_LOCAL_STORAGE_HTTP=true` permits loopback HTTP only outside production for synthetic adapter tests. Never use a public image service or the ephemeral container filesystem as a production fallback.
+
+S3 uses path-style addressing, `region:auto`, `requestChecksumCalculation:'WHEN_REQUIRED'` and `responseChecksumValidation:'WHEN_REQUIRED'` for AXHub compatibility. Apply additive logo metadata/cleanup migrations before web startup. FORCE RLS and role grants are mandatory; the auth role must remain denied. Authorized logo GETs proxy bytes through the application with private/no-store and nosniff headers; no public bucket or presigned URL is exposed.
+
+Durable cleanup rows cover replaced/deleted logos, failed uploads and crash leftovers. Confirm the in-process cleanup scheduler starts with storage configuration, recovers stale leases and preserves currently referenced objects. Validate this against the actual managed bucket and PostgreSQL after approval; local adapter tests do not establish managed-storage readiness.
+
+## Korean hosted links and production boundary
+Register authoritative `GROBLE_STARTUP_URL` and `GROBLE_BUSINESS_URL` only through a separately authorized secure deployment configuration step. Compatibility `GROBLE_STARTUP_PAYMENT_URL`/`GROBLE_BUSINESS_PAYMENT_URL` values are used only if new names are absent. Empty/invalid authoritative values must block checkout. Do not print configured URLs.
+
+Verify the ingress executes `src/proxy.ts` and overwrites `x-borderless-locale`; API routes must remain unprefixed. Confirm English checkout notice → explicit Korean transition → terms/plan-authorized link request, with temporary checkout cookies preserving the saved account preference and session storage preserving same-tab organization navigation. Test return pages with forged success parameters; they must never activate paid access.
+
+Groble merchant return-URL support is unverified. If supported, configure the canonical application `/ko/billing/return` in the merchant dashboard under separate authorization; do not append undocumented provider URL parameters or claim this is already configured. Payment verification and paid activation require future reviewed integration.
+
+## Authorized demonstration seed
+The separately authorized synthetic-data operation created 28 demonstration accounts, three Active Free organizations/projects, eight clearly fictional public Pending Verification experts, one unaffiliated account and one Draft Enterprise organization. No provider payments, NIM analysis, uploads, new external notifications or platform administrator grants were performed. The original test account session was restored. This data mutation did not deploy new source code.
+
+The resumable private seed and credential manifest are `.local/release/demo-seed.cjs` and `.local/demo-accounts.json`, both ignored and permission 0600. Do not commit, upload, print or publish them. No remote platform administrator was bootstrapped; ordinary signup cannot grant that role. Trusted provisioning remains a separate operator task, never a SQL/backdoor workaround.
+
+
+Trusted local-only provisioning separately created two strong, non-demo platform administrator accounts in the loopback development database using the existing Better Auth hashing/provisioning path. Their private records are appended as `localPlatformAdmins` in the ignored 0600 manifest. These are **not** web production accounts: the authorized web dataset remains 28 accounts, with zero remotely provisioned platform administrators. Ordinary signup still cannot create staff, and no bypass or production bootstrap was used.

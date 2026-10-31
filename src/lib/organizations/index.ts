@@ -55,12 +55,17 @@ export async function requireProject(req:Request,write=false){
 const nameInput=z.string().trim().min(1).max(160);
 const roleInput=z.enum(['Admin','Member','Viewer']);
 const projectMap=(p:Record<string,unknown>,role?:Role):ProjectSummary=>({id:String(p.id),organizationId:String(p.organization_id),workspaceId:String(p.workspace_id),name:String(p.name),description:String(p.description),createdAt:iso(p.created_at),role});
-const summary=(org:OrgRow)=>org as OrganizationSummary;
+const summary=(org:OrgRow)=>({...org,logo:('logo' in org?org.logo:null)}) as OrganizationSummary;
+const logoColumns='l.id AS logo_id,l.mime_type AS logo_mime,l.bytes AS logo_bytes,l.width AS logo_width,l.height AS logo_height,l.uploaded_at AS logo_uploaded_at';
+const logoSummary=(row:Record<string,unknown>)=>row.logo_id?{id:String(row.logo_id),mimeType:'image/webp' as const,bytes:Number(row.logo_bytes),width:Number(row.logo_width),height:Number(row.logo_height),uploadedAt:iso(row.logo_uploaded_at)}:null;
 export const organizationService={
  async account(user:AccountUser):Promise<AccountOverview>{
-  const organizations=await getPool().query("SELECT o.id,o.name,o.status,o.plan,w.id AS \"workspaceId\",m.role FROM memberships m JOIN organizations o ON o.id=m.organization_id JOIN organization_workspaces w ON w.organization_id=o.id WHERE m.user_id=$1 AND m.role<>'Pending' ORDER BY o.created_at",[user.id]);
-  const pending=await getPool().query("SELECT o.id AS \"organizationId\",o.name AS \"organizationName\",r.status FROM join_requests r JOIN organizations o ON o.id=r.organization_id WHERE r.user_id=$1 AND r.status='Pending' ORDER BY r.created_at DESC",[user.id]);
-  return {user,organizations:organizations.rows,pending:pending.rows};
+  return transaction(async client=>{
+   await client.query("SELECT set_config('borderless.user_id',$1,true)",[user.id]);
+   const organizations=await client.query('SELECT o.id,o.name,o.status,o.plan,w.id AS "workspaceId",m.role,'+logoColumns+" FROM memberships m JOIN organizations o ON o.id=m.organization_id JOIN organization_workspaces w ON w.organization_id=o.id LEFT JOIN organization_logos l ON l.organization_id=o.id WHERE m.user_id=$1 AND m.role<>'Pending' ORDER BY o.created_at",[user.id]);
+   const pending=await client.query("SELECT o.id AS \"organizationId\",o.name AS \"organizationName\",r.status FROM join_requests r JOIN organizations o ON o.id=r.organization_id WHERE r.user_id=$1 AND r.status='Pending' ORDER BY r.created_at DESC",[user.id]);
+   return {user,organizations:organizations.rows.map(row=>({id:row.id,name:row.name,status:row.status,plan:row.plan,workspaceId:row.workspaceId,role:row.role,logo:logoSummary(row)})),pending:pending.rows};
+  });
  },
  async create(user:AccountUser,input:{name:string}){
   const name=nameInput.parse(input.name);
@@ -77,6 +82,8 @@ export const organizationService={
  async detail(user:AccountUser,orgId:string):Promise<OrganizationDetail>{
   return transaction(async client=>{
    const org=await organizationAccess(client,user.id,orgId,{lock:true});
+   await client.query("SELECT set_config('borderless.user_id',$1,true)",[user.id]);
+   const logoRow=(await client.query('SELECT '+logoColumns+' FROM organization_logos l WHERE l.organization_id=$1',[orgId])).rows[0];
    const admin=['Owner','Admin'].includes(org.role);
    if(org.status!=='Active'&&!admin)throw new ApiError(403,'ORGANIZATION_INACTIVE','Organization activation is required.');
    const members=await client.query("SELECT m.id,m.user_id AS \"userId\",u.name,u.email,m.role FROM memberships m JOIN account_public u ON u.id=m.user_id WHERE m.organization_id=$1 ORDER BY m.created_at",[orgId]);
@@ -85,7 +92,7 @@ export const organizationService={
    let canUseProjects=false;
    if(org.status==='Active')try {await organizationAccess(client,user.id,orgId,{active:true});canUseProjects=true;}catch(error){if(!(error instanceof ApiError)||error.code!=='ORGANIZATION_INACTIVE'||!admin)throw error;}
    const projects=canUseProjects?await client.query("SELECT * FROM projects WHERE organization_id=$1 ORDER BY created_at",[orgId]):{rows:[]};
-   return {organization:summary(org),members:members.rows,requests:requests.rows.map(r=>({...r,createdAt:iso(r.createdAt)})),invites:invites.rows.map(i=>({...i,expiresAt:iso(i.expiresAt),revokedAt:i.revokedAt?iso(i.revokedAt):null,createdAt:iso(i.createdAt)})),projects:projects.rows.map(p=>projectMap(p,org.role))};
+   return {organization:{...summary(org),logo:logoRow?logoSummary(logoRow):null},members:members.rows,requests:requests.rows.map(r=>({...r,createdAt:iso(r.createdAt)})),invites:invites.rows.map(i=>({...i,expiresAt:iso(i.expiresAt),revokedAt:i.revokedAt?iso(i.revokedAt):null,createdAt:iso(i.createdAt)})),projects:projects.rows.map(p=>projectMap(p,org.role))};
   });
  },
  async join(user:AccountUser,code:string){

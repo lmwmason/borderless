@@ -66,7 +66,7 @@ test('all catalogs are valid ICU and user-flow literal copies have Korean catalo
   assert.doesNotThrow(()=>parse(translation),`${scope} Korean ICU: ${source}`);
  }
  let calls=0;
- for(const [name,scope] of [['account-app','account'],['workspace-app','workspace'],['change-impact','workspace'],['admin-console','admin'],['admin-contract-builder','admin'],['admin-feature-editor','admin'],['admin-login','admin'],['admin-shared','admin'],['admin-templates','admin'],['operator-inquiries','admin'],['expert-engagements','experts'],['expert-hub','experts'],['expert-marketplace','experts'],['expert-profile','experts'],['expert-resources','experts'],['expert-shared','experts'],['expert-geography','experts'],['expert-localized','experts'],['pricing-page','billing'],['billing-return-page','billing'],['billing-comparison','billing']] as const){
+ for(const [name,scope] of [['account-app','account'],['workspace-app','workspace'],['change-impact','workspace'],['admin-console','admin'],['admin-contract-builder','admin'],['admin-feature-editor','admin'],['admin-login','admin'],['admin-shared','admin'],['admin-templates','admin'],['operator-inquiries','admin'],['expert-engagements','experts'],['expert-hub','experts'],['expert-marketplace','experts'],['expert-profile','experts'],['expert-resources','experts'],['expert-shared','experts'],['expert-geography','experts'],['expert-localized','experts'],['pricing-page','billing'],['billing-return-page','billing'],['billing-comparison','billing'],['korean-checkout-consent','billing'],['organization-logo','common'],['organization-logo-uploader','common']] as const){
   const source=readFileSync(new URL(`../src/components/${name}.tsx`,import.meta.url),'utf8');
   const ast=ts.createSourceFile(name,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const merged={...catalogs.common,...catalogs.errors,...catalogs[scope]};
@@ -138,4 +138,14 @@ test('locale proxy uses real page segments without rewrite recursion and leaves 
  assert.equal(legacy.status,307);assert.equal(legacy.headers.get('location'),'https://example.test/ko/pricing?plan=Free');
  assert.equal(proxy(new NextRequest('https://example.test/api/pricing')).status,200);
  assert.equal(proxy(new NextRequest('https://example.test/ko/api/pricing')).status,404);
+});
+
+
+test('temporary Korean checkout preserves account language and restores the English page route',()=>{
+ const start=proxy(new NextRequest('https://example.test/ko/pricing?checkoutFrom=en&returnLocale=en',{headers:{cookie:'borderless_locale=en; borderless_locale_source=manual'}}));
+ assert.equal(start.status,200);assert.match(start.headers.getSetCookie().join(';'),/borderless_locale_source=checkout/);assert.match(start.headers.getSetCookie().join(';'),/borderless_checkout_return_locale=en/);
+ const browserCookie='borderless_locale=ko; borderless_locale_source=checkout; borderless_checkout_return_locale=en';
+ const returned=proxy(new NextRequest('https://example.test/ko/billing/return',{headers:{cookie:browserCookie}}));assert.equal(returned.status,200);
+ const leaving=proxy(new NextRequest('https://example.test/ko/?view=billing',{headers:{cookie:browserCookie}}));assert.equal(leaving.status,307);assert.equal(leaving.headers.get('location'),'https://example.test/en/?view=billing');assert.match(leaving.headers.getSetCookie().join(';'),/borderless_locale=en/);
+ const api=proxy(new NextRequest('https://example.test/api/pricing',{headers:{cookie:browserCookie,'x-borderless-locale':'en'}}));assert.equal(api.headers.get('x-middleware-request-x-borderless-locale'),'ko','proxy overwrites an untrusted locale header');
 });

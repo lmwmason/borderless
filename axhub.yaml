@@ -22,3 +22,6 @@ env:
       scope: runtime
     - name: BORDERLESS_ADMIN_AUTH_SECRET
       scope: runtime
+
+storage:
+  enabled: true

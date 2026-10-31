@@ -42,7 +42,7 @@ test('operator inquiry inbox requires separate platform allowlist, records human
   const inquiry=listed.inquiries.find(item=>item.id===id)!;assert.ok(inquiry);
   assert.equal(inquiry.companyName,organization.name);assert.equal(inquiry.requesterEmail,owner.user.email);assert.equal(inquiry.requesterName,owner.user.name);
   assert.equal(inquiry.status,'Pending');assert.equal(inquiry.reviewedAt,null);
-  assert.deepEqual(Object.keys(inquiry).sort(),['id','organizationId','companyName','requesterName','requesterEmail','notes','status','createdAt','reviewedAt','reviewNotes','salesStatus','assigneeId','assigneeName','updatedAt'].sort());
+  assert.deepEqual(Object.keys(inquiry).sort(),['id','organizationId','organizationLogo','companyName','requesterName','requesterEmail','notes','status','createdAt','reviewedAt','reviewNotes','salesStatus','assigneeId','assigneeName','updatedAt'].sort());
   const reviewing=await inquiryService.review(operator.user,id,{status:'In Review',notes:'Platform operator reviewing the introduction inquiry.'});
   assert.equal(reviewing.status,'In Review');assert.ok(reviewing.reviewedAt);
   const closed=await inquiryService.review(operator.user,id,{status:'Closed',notes:'Inquiry handling closed. No contract executed and no paid access provisioned.'});

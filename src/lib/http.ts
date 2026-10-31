@@ -9,7 +9,7 @@ async function canonicalHandle(run:()=>Promise<unknown>):Promise<Response>{
  if(error instanceof Error && /not found/i.test(error.message))return Response.json({error:{code:'NOT_FOUND',message:'Resource not found.',retryable:false}},{status:404});
  return Response.json({error:{code:'INTERNAL',message:'The request could not be completed.',retryable:true}},{status:500});}
 }
-export async function readBody(request:Request){
+export function assertMutationOrigin(request:Request){
  const origin=request.headers.get('origin');
  if(origin){
   // Next standalone can normalize request.url to its bind address. Host is the
@@ -20,6 +20,9 @@ export async function readBody(request:Request){
    : ['http:','https:'].includes(parsed.protocol)&&parsed.host===(request.headers.get('host')||new URL(request.url).host);}catch{}
   if(!sameOrigin)throw new ApiError(403,'ORIGIN','Cross-origin mutation denied.');
  }
+}
+export async function readBody(request:Request){
+ assertMutationOrigin(request);
  const length=request.headers.get('content-length');
  if(length&&/^\d+$/.test(length)&&Number(length)>64000)throw new ApiError(413,'TOO_LARGE','Request too large.');
  const reader=request.body?.getReader();if(!reader)return JSON.parse('');

@@ -18,7 +18,7 @@
 Desktop 1440px, mobile 375px; keyboard navigation; forms and unknown states; loading/error; no dead buttons; correct company and scenario context; copy and export; no chatbot/neon design.
 
 ## Release gate
-Run lint (if configured), typecheck, tests, production build, local smoke and real NVIDIA request with configured key. If API key is unavailable, report integration unverified rather than claiming pass. AXHub deploy only once after gate.
+Run lint (if configured), typecheck, tests, production build, local smoke and real NVIDIA request with configured key. If API key is unavailable, report integration unverified rather than claiming pass. Any new AXHub deployment requires a separate explicit approval after the gate; passing local tests is not permission.
 
 ## Organization/security regression gates
 
@@ -49,3 +49,25 @@ Templates: real PostgreSQL example initialization, create/search/edit/clone/stat
 - Persist Korean/English descriptions and original-language fallback. Render submitted markup as text. Public expert API and SQL view tests must retain credential privacy and suppress private portfolio descriptions in every language, including direct JSON projection bypass attempts; the owner still retains the original private content.
 - Compare every registered feature flag and all member/project/monthly Deep Review allowances against central plan presets for all four columns. All configurable Enterprise rows must remain Custom configuration; baseline tasks/Quick Assessment/Change Impact remain Included. Existing card count, payment-link, Free activation and Enterprise inquiry flows must remain intact. Check mobile table scrolling and English/Korean labels, including Legal Intelligence / 법률 인텔리전스.
 - Validate error catalogue coverage for all literal ApiError messages and the installed authentication library's canonical messages without changing error codes, credentials, source text or authoritative terms.
+
+
+## Organization logo regression gates
+- Test Owner/Admin upload/replace/delete; Member/Viewer read-only access; Pending, unrelated organization and ordinary-user admin-route denial. Recheck permission after object I/O so a mid-upload demotion cannot commit metadata.
+- Verify PNG/JPEG/WebP signatures and declared MIME agreement, full decode failure, unsupported SVG/GIF, animation/multipage rejection, 2 MiB input/output bounds, streaming request limits, 4096 per dimension and 16,777,216 input pixels. Confirm orientation, lossless WebP output, preserved aspect ratio without resizing and metadata stripping.
+- Exercise absent metadata → initials/no request, protected byte GET/private no-store/nosniff headers, missing object/error fallback, mobile containment and no public/presigned storage URL leakage.
+- Use isolated PostgreSQL with FORCE RLS and denied auth-role access to metadata/cleanup tables. Mock storage for failed put/delete, transaction rollback, replacement, deletion, crash/stale-lease recovery and reference-preserving cleanup. Test real AWS SDK requests against local synthetic S3-compatible HTTP/HTTPS fixtures, including signing and WHEN_REQUIRED checksum behavior. Never upload to a production bucket during local QA.
+- Actual AXHub bucket provisioning, injected STORAGE_* settings, restart persistence and cleanup remain post-approval checks. A local storage.enabled:true manifest is not evidence that storage exists.
+
+## Korean checkout regression gates
+- Authoritative GROBLE_STARTUP_URL/BUSINESS_URL override legacy *_PAYMENT_URL only when present. Empty/invalid new values must block fallback. Verify configured flags without printing private URLs; retain exact canonical plan prices.
+- Default/English/unknown server locale cannot issue a link, even with body locale:'ko', fabricated Referer or forged client x-borderless-locale through the real proxy. Korean requests still require Owner/Admin, matching saved plan and current version/hash acceptance.
+- English paid actions open only the exact English notice and explicit Continue in Korean action. Confirm no provider request before that transition, Korean-only link request afterward, correct plan/organization context and unchanged provider URL. Use intercepted synthetic provider responses; never navigate to configured live payment URLs or make a real payment.
+- Verify temporary checkout cookies do not overwrite the saved account language; leaving checkout or explicit language change restores/clears context. Same-tab session storage restores organization and English billing navigation when provider query parameters are absent.
+- Return pages ignore success/paid/paymentVerified/status assertions and make no activation request. Free activation and Enterprise inquiry flows remain separate. No test may assert automatic Groble return support or implemented provider verification.
+- Record final typecheck, isolated PostgreSQL tests, browser tests/build/container evidence in QA_REPORT.md and RELEASE_CHECKLIST.md; this document defines gates rather than claiming a fresh release passed.
+
+## Demonstration dataset verification
+The authorized production seed verified three Free organizations with exact Owner1/Admin1/Member2/Viewer1/Pending1 roles and one project each, eight searchable fictional Pending Verification experts, one unaffiliated account and a Draft/Pending Enterprise owner/organization: 28 accounts total. Profiles are explicitly fictional, have no verified badge or real license number and are unavailable for engagement. Scoped directory verification uses an approved project header; no project/entitlement bypass is allowed. Platform administrator creation remains blocked without trusted provisioning. Protect the ignored 0600 credential/checkpoint manifest and restore the prior synthetic login after seeding. No real payment, model call, file upload or new external notification is part of this seed.
+
+
+Trusted local-only provisioning separately created two strong, non-demo platform administrator accounts in the loopback development database using the existing Better Auth hashing/provisioning path. Their private records are appended as `localPlatformAdmins` in the ignored 0600 manifest. These are **not** web production accounts: the authorized web dataset remains 28 accounts, with zero remotely provisioned platform administrators. Ordinary signup still cannot create staff, and no bypass or production bootstrap was used.

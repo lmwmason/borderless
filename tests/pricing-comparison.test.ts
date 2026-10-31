@@ -11,5 +11,5 @@ test('pricing comparison derives real capacities and feature availability from t
  assert.equal(PRICING_COMPARISON.find(r=>r.label==='Audit log export')!.values.Free,'Not included');assert.equal(PRICING_COMPARISON.find(r=>r.label==='Priority support')!.values.Business,'Request recording');
 });
 test('comparison is additive below existing plan cards and preserves prices and payment flow',()=>{
- const text=readFileSync('src/components/pricing-page.tsx','utf8');assert.ok(text.indexOf('<BillingComparison')>text.indexOf('pricing-plans'));assert.ok(text.includes('/payment-link'));assert.ok(text.includes('/enterprise'));assert.ok(text.includes('/activate-free'));assert.ok(text.includes('49000')||text.includes('49,000'));assert.ok(text.includes('149000')||text.includes('149,000'));
+ const text=readFileSync('src/components/pricing-page.tsx','utf8');assert.ok(text.indexOf('<BillingComparison')>text.indexOf('pricing-plans'));assert.ok(text.includes('<KoreanCheckoutConsent'));assert.ok(readFileSync('src/components/korean-checkout-consent.tsx','utf8').includes('/payment-link'));assert.ok(text.includes('/enterprise'));assert.ok(text.includes('/activate-free'));assert.ok(text.includes('49000')||text.includes('49,000'));assert.ok(text.includes('149000')||text.includes('149,000'));
 });

@@ -5,4 +5,6 @@ export async function register(){
  try{await syncPlatformOperators();}catch{console.error('Platform operator provisioning could not be synchronized.');}
  const {startNotificationWorker}=await import('./lib/notifications');
  startNotificationWorker();
+ const {startLogoCleanupWorker}=await import('./lib/organization-logos');
+ startLogoCleanupWorker();
 }

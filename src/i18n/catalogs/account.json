@@ -175,5 +175,8 @@
   "Enterprise request recorded for human review. No contract or payment was completed.": "담당자 검토를 위해 Enterprise 요청을 기록했습니다. 계약 체결이나 결제는 이루어지지 않았습니다.",
   "Pending plan request canceled.": "대기 중인 요금제 요청을 취소했습니다.",
   "Borderless MVP provides scoped regulatory preparation and collaborative workflow support, not legal advice or compliance certification. Human professional review is required before reliance or external actions. Quick Assessment uses curated rules. Sending company facts for NVIDIA Deep Review requires separate explicit consent. Do not enter sensitive personal data or secrets. Free pilot access does not create a paid subscription or an enterprise contract. Paid service and enterprise agreements require separate verified arrangements.": "Borderless MVP는 제한된 범위의 규제 대응 준비와 협업 업무를 지원하며 법률 자문이나 준수 인증을 제공하지 않습니다. 결과에 의존하거나 외부 조치를 하기 전에 전문가의 검토가 필요합니다. 빠른 평가는 선별된 규칙을 사용합니다. NVIDIA 심층 검토를 위한 회사 정보 전송에는 별도의 명시적 동의가 필요합니다. 민감한 개인정보나 비밀 정보를 입력하지 마세요. 무료 시범 이용은 유료 구독이나 Enterprise 계약을 생성하지 않습니다. 유료 서비스와 Enterprise 계약에는 별도로 검증된 절차가 필요합니다.",
-  "Groble checkout and webhook authenticity are not verified or configured. No charges or paid activation are available. Enterprise agreements require separate human approval.": "Groble 결제 및 웹훅의 진위 확인과 설정이 완료되지 않았습니다. 청구 및 유료 활성화를 이용할 수 없습니다. Enterprise 계약에는 별도의 담당자 승인이 필요합니다."
+  "Groble checkout and webhook authenticity are not verified or configured. No charges or paid activation are available. Enterprise agreements require separate human approval.": "Groble 결제 및 웹훅의 진위 확인과 설정이 완료되지 않았습니다. 청구 및 유료 활성화를 이용할 수 없습니다. Enterprise 계약에는 별도의 담당자 승인이 필요합니다.",
+  "Settings": "설정",
+  "Organization created. Its logo upload did not finish. Retry in Organization settings.": "조직을 생성했지만 로고 업로드를 완료하지 못했습니다. 조직 설정에서 다시 시도해 주세요.",
+  "Sign in to continue with {plan}. Your plan selection will be preserved.": "{plan} 요금제로 계속하려면 로그인해 주세요. 선택한 요금제는 유지됩니다."
 }

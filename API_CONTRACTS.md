@@ -33,9 +33,7 @@ canonical termsVersion/termsText, acceptance and truthful checkout availability.
 PUT billing/plan {plan}; POST billing/terms {termsVersion,accepted:true};
 POST billing/activate-free {}; POST billing/enterprise {notes};
 POST billing/cancel {} cancels pending local requests only.
-POST billing/checkout {} always returns503 CONFIG_REQUIRED until Groble's API and
-webhook authentication are verified and implemented. No active paid subscription
-can be created by these client-facing routes.
+POST billing/checkout {} delegates the organization's saved Startup/Business plan to the Korean-only hosted-link service. Non-Korean request context returns409 CHECKOUT_LANGUAGE_REQUIRED; missing/invalid configuration returns503 CONFIG_REQUIRED. No active paid subscription can be created by these client-facing routes.
 
 ## Project APIs
 
@@ -69,7 +67,7 @@ Session required: GET/PUT /api/experts/me; POST me/submit {}; POST me/services; 
 GET /api/engagements?projectId; POST /api/engagements; GET /:id; POST /:id/actions; GET /:id/workspace; POST /:id/workspace/entries; PATCH /:id/workspace/entries/:entryId. Company and expert permissions are resolved server-side. Pre-contract collaboration is denied. Revoked/expired expert access fails without disclosing company data.
 
 ## Pricing and Enterprise operations
-GET /api/pricing returns canonical public plan prices and configured hosted-link availability. POST /api/organizations/:id/billing/payment-link {plan:Startup|Business} requires Owner/Admin, matching selected plan and current terms. It returns an operator-configured HTTPS Groble link only; no entitlement update occurs. /billing/return always shows verification pending.
+GET /api/pricing returns canonical public plan prices, actual configured hosted-link flags, checkoutLocale:'ko' and paymentVerificationAvailable:false. POST /api/organizations/:id/billing/payment-link prefers {plan:Startup|Business,locale:'ko'}; the compatibility input may omit locale. It requires resolved Korean request context, Owner/Admin, matching saved plan and current terms. A body locale cannot override English context. Success returns {url,plan,amount,currency,interval,requiresPayment,checkoutLocale:'ko',verificationPending:true}; the configured HTTPS Groble URL is unchanged. Billing snapshots report checkoutAvailable from the selected plan's valid configuration and checkoutLocale:'ko'. No entitlement update occurs. /ko/billing/return always shows verification pending, ignores forged payment assertions and may offer an English billing link.
 POST billing/enterprise accepts {notes,idempotencyKey?:UUID}; exact duplicate content/key is idempotent, conflicting reuse returns409. Company/requester snapshot is server-derived.
 GET /api/admin/inquiries?status&salesStatus&q&assigneeId returns {inquiries,assignees}; GET /:id returns {inquiry,notes,activity,notifications}; PATCH /:id {salesStatus?,assigneeId?} updates CRM or legacy {status,notes} reviews handling; POST /:id/notes {body}; POST /:id/notifications/:notificationId/retry {}. Every admin endpoint verifies a real session plus separate platform operator authorization. Won/Closed/Approved do not execute contracts or grant Enterprise access.
 
@@ -87,3 +85,16 @@ GET/POST /api/admin/subscription-templates: search/list or create. GET/PATCH /:i
 GET `/api/locale` returns `{locale:'ko'|'en'|null,authenticated:boolean}`. POST `/api/locale` accepts strict `{locale:'ko'|'en'}`, saves the preference only for an actual regular-user or separate administrator session and sets the browser language preference cookie. Anonymous POST succeeds without a customer database write. Protected domain APIs retain their existing authentication and project scope requirements; page locale prefixes do not create alternate API routes.
 Expert profile input/output adds `residenceCountry` and `qualificationCountry` (assigned ISO alpha-2 or null), `licensedJurisdictions` (country/subdivision claims such as `US-CA`), `serviceCountries` (assigned ISO alpha-2 array), `consultationModes` (`remote`/`in_person` array), `originalLanguage` (`en`/`ko`) and `localizedContent`. Profile locale objects allow `bio`, `specialtiesDescription`, `experience`, `portfolioDescription`; service locale objects allow `description`, `scope`, `conditions`. Locale maps accept only `en`/`ko`; descriptive strings remain plain text. Old profiles default countries to null and arrays to empty without inferring geography from credential strings. Default original language is en. Profile edits continue to reset verified status for renewed human review.
 Directory GET `/api/experts` additionally accepts `residenceCountry`, `qualificationCountry`, `licensedJurisdiction` and `serviceCountry`, alongside existing language/specialty/price filters. Invalid country or US jurisdiction codes fail validation. Filters query actual stored public fields. Public DTOs and SQL views exclude private credentials and suppress localized portfolio descriptions when no portfolio item is explicitly public. These fields are self-reported and do not verify legal practice rights.
+
+
+## Protected organization logo bytes
+- `PUT /api/organizations/:id/logo`: real regular-user session, Owner/Admin, same-origin multipart form with exactly one `file`; returns `{logo:{id,mimeType:'image/webp',bytes,width,height,uploadedAt}}`.
+- `GET /api/organizations/:id/logo`: approved Owner/Admin/Member/Viewer membership; returns authorized WebP bytes. Pending and unrelated users are denied.
+- `DELETE /api/organizations/:id/logo`: Owner/Admin and origin validation; returns `{logo:null}`. Object cleanup is durable and may complete after the metadata mutation.
+- `GET /api/admin/organizations/:id/logo`: separately authenticated, enabled platform administrator; read-only bytes. It does not create an administrator write endpoint.
+
+Organization summaries/details include `logo:metadata|null` when authorized. Private storage keys, bucket endpoints and credentials are absent from DTOs. Missing metadata returns404 for the byte route; storage failure returns503. Input is PNG/JPEG/WebP up to 2 MiB, one non-animated fully decodable image, at most 4096 per dimension and 16,777,216 pixels; safe lossless WebP output is also limited to 2 MiB. Oversize bodies return413; invalid images return400; authorization and persisted upload-rate limits remain enforced.
+
+Byte responses are app-proxied, not redirects or presigned URLs: `Content-Type:image/webp`, exact `Content-Length`, `X-Content-Type-Options:nosniff`, `Cache-Control:private, no-store`, `Content-Security-Policy:default-src 'none'; sandbox`, `Content-Disposition:inline` and an ETag based on the metadata ID.
+
+Checkout trusts only the locale context supplied by the proxy, which overwrites client `x-borderless-locale`; direct helper/unit requests fall back to locale cookie/Accept-Language. Browser checkout transitions and session-storage organization IDs are navigation hints, never organization authority or verified-payment evidence. No public payment-activation webhook exists.

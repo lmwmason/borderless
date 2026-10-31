@@ -1,10 +1,16 @@
+import sharp from 'sharp';
+import {startLogoStorageFixture} from './logo-storage-fixture';
 import {spawn,execFileSync} from 'node:child_process';import {mkdir,writeFile,readFile,chmod,rm,mkdtemp} from 'node:fs/promises';import {randomUUID} from 'node:crypto';import {join} from 'node:path';import {tmpdir} from 'node:os';import {createServer} from 'node:https';import {request as upstreamRequest} from 'node:http';import {request as playwrightRequest} from '@playwright/test';
 async function main(){
  const image=process.env.BORDERLESS_SMOKE_IMAGE||'localhost/borderless:stabilization',name='borderless-local-smoke-'+process.pid,origin='https://localhost:3221';
  const envPath=join(process.cwd(),'.local','container-smoke.env'),tls=await mkdtemp(join(tmpdir(),'borderless-container-tls-'));
  await mkdir(join(process.cwd(),'.local'),{recursive:true,mode:0o700});
- const allowed=['DIRECT_DATABASE_URL','DATABASE_URL','DATABASE_URL_RUNTIME','DATABASE_URL_AUTH','BETTER_AUTH_SECRET'];
+ const allowed=['DIRECT_DATABASE_URL','DATABASE_URL','DATABASE_URL_RUNTIME','DATABASE_URL_AUTH','BETTER_AUTH_SECRET','BORDERLESS_ADMIN_AUTH_SECRET'];
  for(const key of allowed)if(!process.env[key])throw new Error('Local database/auth configuration missing.');
+ const logoFixture=await startLogoStorageFixture();
+ const logoCAPath=join(process.cwd(),'.local','container-logo-ca.pem'),containerCAPath='/tmp/borderless-logo-ca.pem';
+ await writeFile(logoCAPath,await readFile(logoFixture.caPath),{mode:0o644});await chmod(logoCAPath,0o644);
+ Object.assign(process.env,logoFixture.env,{NODE_EXTRA_CA_CERTS:containerCAPath});allowed.push('STORAGE_ENDPOINT','STORAGE_BUCKET','STORAGE_ACCESS_KEY','STORAGE_SECRET_KEY','NODE_EXTRA_CA_CERTS');
  const newline=String.fromCharCode(10);
  await writeFile(envPath,[...allowed.map(key=>key+'='+process.env[key]),'BETTER_AUTH_URL='+origin,'PORT=3220','NVIDIA_API_KEY=',''].join(newline),{mode:0o600});await chmod(envPath,0o600);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(tls,'key'),'-out',join(tls,'cert'),'-days','1','-subj','/CN=localhost'],{stdio:'ignore'});
@@ -17,7 +23,7 @@ async function main(){
  let child:ReturnType<typeof spawn>|undefined;
  const podman=(args:string[])=>execFileSync('flatpak-spawn',['--host','podman',...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']});
  async function start(){
-  child=spawn('flatpak-spawn',['--host','podman','run','--rm','--name',name,'--network=host','--env-file',envPath,image],{stdio:['ignore','inherit','inherit']});
+  child=spawn('flatpak-spawn',['--host','podman','run','--rm','--name',name,'--network=host','--env-file',envPath,'--volume',logoCAPath+':'+containerCAPath+':ro,Z',image],{stdio:['ignore','inherit','inherit']});
   for(let i=0;i<60;i++){const response=await api.get('/api/health').catch(()=>null);if(response?.status()===200)return;await new Promise(r=>{ setTimeout(r,500); });}
   throw new Error('Container health check failed.');
  }
@@ -38,11 +44,18 @@ async function main(){
   const before=await json('/api/workspace','GET',undefined,project.id);
   const task=await json('/api/tasks','POST',{title:'Preserve container QA task'},project.id);
   const doc=await json('/api/documents','POST',{title:'Preserve document',content:'Synthetic container restart proof'},project.id);
+  const logoPath='/api/organizations/'+org.id+'/logo';
+  const logoPNG=await sharp({create:{width:37,height:19,channels:4,background:{r:40,g:80,b:120,alpha:0.5}}}).png().toBuffer();
+  const uploaded=await api.put(logoPath,{multipart:{file:{name:'synthetic-logo.png',mimeType:'image/png',buffer:logoPNG}}});if(!uploaded.ok())throw new Error('Container logo upload failed: '+uploaded.status());
+  const logoMetadata=(await uploaded.json()).logo;
+  const logoBeforeResponse=await api.get(logoPath);if(!logoBeforeResponse.ok())throw new Error('Container logo read failed.');const logoBefore=await logoBeforeResponse.body(),decodedLogo=await sharp(logoBefore).metadata();
   await stop();await start();
   const after=await json('/api/workspace','GET',undefined,project.id),docs=await json('/api/documents','GET',undefined,project.id);
-  const report={image,health:true,nonRoot:privileges.uid!==0,ownerCredentialsRemoved:!privileges.ownerURL,noEnvFiles:!privileges.envFiles,sessionSurvivedRestart:Boolean(account.user),companyPersisted:after.company?.id===company.id,scenarioPersisted:after.scenarios[0]?.id===before.scenarios[0]?.id,taskPersisted:after.tasks.some((t:{id:string})=>t.id===task.id),documentPersisted:docs.documents.some((d:{id:string})=>d.id===doc.id)};
+  const logoAfterResponse=await api.get(logoPath),logoAfter=await logoAfterResponse.body();
+  const accountAfter=await json('/api/account');const savedLogo=accountAfter.organizations.find((item:{id:string})=>item.id===org.id)?.logo;
+  const report={image,health:true,nonRoot:privileges.uid!==0,ownerCredentialsRemoved:!privileges.ownerURL,noEnvFiles:!privileges.envFiles,sessionSurvivedRestart:Boolean(account.user),companyPersisted:after.company?.id===company.id,scenarioPersisted:after.scenarios[0]?.id===before.scenarios[0]?.id,taskPersisted:after.tasks.some((t:{id:string})=>t.id===task.id),documentPersisted:docs.documents.some((d:{id:string})=>d.id===doc.id),logoPersistedAfterRestart:logoAfterResponse.ok()&&logoAfter.equals(logoBefore)&&savedLogo?.id===logoMetadata.id&&savedLogo.bytes===logoBefore.length,logoWebpReencoded:decodedLogo.format==='webp'&&decodedLogo.width===37&&decodedLogo.height===19,logoStoredViaS3:logoFixture.stats.puts>=1&&logoFixture.stats.gets>=2&&logoFixture.stats.rejected===0};
   if(Object.values(report).some(v=>v===false))throw new Error('Container persistence assertion failed.');
   await writeFile('/tmp/borderless-container-smoke.json',JSON.stringify(report,null,2),{mode:0o600});console.log(JSON.stringify(report));
- }finally{await stop().catch(()=>{});await api.dispose();proxy.close();await rm(envPath,{force:true});await rm(tls,{recursive:true,force:true});}
+ }finally{await stop().catch(()=>{});await api.dispose();proxy.close();await rm(envPath,{force:true});await rm(logoCAPath,{force:true});await logoFixture.cleanup();await rm(tls,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error('Container smoke failed: '+(error instanceof Error?error.message:'unknown error'));process.exitCode=1;});

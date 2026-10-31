@@ -1,0 +1,33 @@
+import {test,expect} from '@playwright/test';
+const baseURL=process.env.BORDERLESS_QA_URL||'https://localhost:3219';
+test.use({baseURL,ignoreHTTPSErrors:true});
+test('English checkout requires a Korean transition, preserves language preference and never activates from a return URL',async({page})=>{
+ const target=new URL(baseURL);test.skip(!['localhost','127.0.0.1'].includes(target.hostname)||target.port!=='3219','Checkout language QA requires the isolated local server.');
+ const organizationId='synthetic-checkout-locale',mutations:string[]=[],external:string[]=[];
+ await page.context().addCookies([{name:'borderless_locale',value:'en',url:baseURL},{name:'borderless_locale_source',value:'manual',url:baseURL}]);
+ page.on('request',request=>{if(!request.url().startsWith(baseURL))external.push(new URL(request.url()).origin);if(request.method()==='POST')mutations.push(new URL(request.url()).pathname)});
+ await page.route('**/api/locale',route=>route.fulfill({json:{locale:'en',authenticated:true}}));
+ await page.route('**/api/pricing',route=>route.fulfill({json:{checkoutLocale:'ko',paymentVerificationAvailable:false,plans:[{plan:'Free',amount:0,currency:'KRW',interval:'month',configured:true,requiresPayment:false},{plan:'Startup',amount:49000,currency:'KRW',interval:'month',configured:true,requiresPayment:true},{plan:'Business',amount:149000,currency:'KRW',interval:'month',configured:true,requiresPayment:true},{plan:'Enterprise',amount:null,currency:'KRW',interval:'custom',configured:true,requiresPayment:false}]}}));
+ await page.route('**/api/account',route=>route.fulfill({json:{user:{id:'synthetic-checkout-user',name:'Original customer name',email:'synthetic@example.test'},organizations:[{id:organizationId,name:'Original company 이름',role:'Owner',plan:'Startup',status:'Draft',workspaceId:'synthetic-workspace'}],pending:[]}}));
+ await page.route('**/api/organizations/'+organizationId+'/billing',route=>route.fulfill({json:{plan:'Startup',organizationStatus:'Draft',termsVersion:'synthetic-only',termsText:'Synthetic test terms',accepted:true,subscription:{status:'Pending'},checkoutAvailable:true,checkoutLocale:'ko'}}));
+ await page.goto('/en/pricing?'+new URLSearchParams({plan:'Startup',organizationId}));
+ await expect(page.locator('html')).toHaveAttribute('lang','en');
+ await page.getByRole('button',{name:'Continue to checkout',exact:true}).click();
+ const notice=page.getByRole('region',{name:'Korean checkout notice',exact:true});
+ await expect(notice).toContainText('Checkout is currently available in Korean only. You can continue to the Korean checkout page.');
+ const transition=notice.getByRole('link',{name:'Continue in Korean',exact:true});
+ await expect(transition).toHaveAttribute('href','/ko/pricing?'+new URLSearchParams({plan:'Startup',organizationId,returnLocale:'en',checkoutFrom:'en'}));
+ expect(mutations).toEqual([]);expect(external).toEqual([]);
+ await transition.click();await expect(page.locator('html')).toHaveAttribute('lang','ko');
+ await expect(page.getByRole('combobox',{name:'결제 조직',exact:true})).toHaveValue(organizationId);
+ await page.route('**/api/organizations/'+organizationId+'/billing/payment-link',async route=>{
+  expect(route.request().postDataJSON()).toEqual({plan:'Startup',locale:'ko'});
+  await route.fulfill({status:503,json:{error:{code:'CONFIG_REQUIRED',message:'Unable to open Korean checkout.'}}});
+ });
+ await page.getByRole('button',{name:'한국어 결제 페이지로 계속',exact:true}).click();
+ await expect(page.locator('.korean-checkout-consent [role=alert]')).toContainText('한국어 결제 화면을 열지 못했습니다.');
+ expect(mutations).toEqual(['/api/organizations/'+organizationId+'/billing/payment-link']);expect(external).toEqual([]);
+ await page.goto('/ko/billing/return?'+new URLSearchParams({organizationId,returnLocale:'en',success:'true',paymentVerified:'true',status:'Active'}));
+ await expect(page.getByRole('link',{name:'영어 결제 설정으로 돌아가기',exact:true})).toHaveAttribute('href','/en/?'+new URLSearchParams({organizationId,view:'billing'}));
+ expect(mutations).toEqual(['/api/organizations/'+organizationId+'/billing/payment-link']);expect(external).toEqual([]);
+});

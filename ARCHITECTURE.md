@@ -25,7 +25,7 @@ or submitted payment status grants access. Enterprise requests stay Pending.
 
 ## PostgreSQL and migrations
 
-One Next.js Node container on AXHub with managed PostgreSQL. Drizzle owns 25 tables
+One Next.js Node container on AXHub with managed PostgreSQL. Drizzle owns versioned identity/domain tables
 and additive journaled migrations. Owner/direct connection runs migrations; runtime
 and auth use distinct limited roles. Runtime cannot read credential/session tables;
 auth cannot read company/project tables. A narrow account_public view supplies
@@ -62,8 +62,9 @@ but this in-process execution mechanism is not a distributed worker queue.
 
 ## Deferred and approval gate
 
-Groble checkout/webhook verification and enterprise contract fulfillment need a
-verified provider agreement/integration; no live payments or fake successes.
+Configured Korean-only Groble hosted links are separate from payment verification.
+Webhook authenticity, reconciliation and paid activation still need verified
+provider integration; local QA performs no real payments or fake successes.
 Email verification/password recovery delivery, production backup/restore drills,
 distributed workers and binary document upload remain later work.
 
@@ -90,3 +91,18 @@ Template parents reference immutable versions. Contract proposals retain the sub
 `src/proxy.ts` selects explicit `/ko` or `/en` locale prefixes, redirects legacy page URLs into real App Router `[locale]` segments and leaves API paths unprefixed. `next-intl` request configuration and flat source-text catalogues provide Korean/English copy and locale-aware date/number/currency formatting. APIs and clients retain canonical error codes; translations concern display text only. `user_preferences` stores only owner-scoped locale and timestamp under forced RLS. Preference writes resolve an actual regular or separate administrator session; anonymous choices never create database rows.
 Expert geographical and bilingual additions are additive JSON fields, normalized with safe defaults on legacy reads. Assigned ISO country codes use a maintained allowlist; known US state/territory codes are checked separately. Other subdivision claims validate format and assigned country prefix, without claiming professional eligibility. Public security-barrier SQL views expose only allowed descriptive locale fields and suppress portfolio descriptions without an explicitly public portfolio item. Source credential strings, private portfolio/resume content and verification evidence remain protected. Migration0025 adds preferences and public field projections;0026 hardens multilingual portfolio privacy for already-migrated installations.
 `src/lib/billing/comparison.ts` derives public comparison cells from the same client-safe `PLAN_PRESETS` and feature registry used by server entitlements. The table grants no access and has no billing mutation controls; actual authorization, quotas and approved Enterprise overrides remain server-enforced.
+
+
+## Private organization logos
+`organization_logos` stores one current logo per organization: ID, private object key, WebP MIME type, byte size, dimensions, uploader and upload timestamp. Public organization DTOs expose only `{id,mimeType,bytes,width,height,uploadedAt}`; object keys and storage credentials stay server-side. Both logo metadata and the durable `organization_logo_cleanup` outbox use ENABLE/FORCE RLS and restricted runtime grants; the auth role has no access. Owner/Admin mutation and approved-member reads recheck membership. Separate enabled administrators have a read-only protected route.
+
+The HTTP upload reader bounds the multipart stream before buffering and accepts exactly one `file`. Magic bytes must match the declared PNG/JPEG/WebP MIME type. Full Sharp decoding with warning failure, animation/multipage rejection and input pixel limits precedes orientation-aware lossless WebP encoding. Input and stored output are each at most 2 MiB, each dimension at most 4096, and input pixels at most 16,777,216. No resize or aspect-ratio change is applied; metadata is not retained.
+
+Private bytes use the server S3 adapter with AXHub `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY` and `STORAGE_SECRET_KEY`, path-style addressing and `region:auto`. Request checksum calculation and response checksum validation both use `WHEN_REQUIRED`. No production filesystem or public paid image-service fallback exists. Missing storage configuration fails closed. Reads proxy authorized bytes through the app; no presigned/public storage URL is returned.
+
+Durable cleanup intent precedes upload. A transaction revalidates authorization before changing the metadata pointer. Replaced/deleted/failed-upload objects are reclaimed by leased `SKIP LOCKED` jobs, including stale-lease recovery after restart. Cleanup rechecks live references before deleting an object, so an ambiguous committed write is not removed. Failed deletion stays queued; current metadata remains authoritative.
+
+## Korean checkout request context
+The proxy overwrites `x-borderless-locale` on every API request from the selected page/cookie/Accept-Language context. Checkout resolves that header, then the browser locale cookie, then language negotiation; it does not use Referer as authorization. Only resolved `ko` can issue a hosted link. Body `locale:'ko'` is descriptive, not sufficient authority. Owner/Admin, saved paid plan and current hashed terms acceptance are independently checked.
+
+An explicit `/ko/pricing?checkoutFrom=en&returnLocale=en` transition creates temporary `borderless_locale=ko`, `borderless_locale_source=checkout` and `borderless_checkout_return_locale=en` cookies. The language switcher suppresses account preference synchronization during that checkout context. Leaving checkout restores English and clears the temporary return marker; explicit language selection clears the context. Session storage retains only the selected organization ID and return language for the same-tab return UI, never payment proof or credentials. Provider URLs are passed through unchanged without invented return/locale parameters.

@@ -26,7 +26,7 @@ Initial customer: Korean B2B SaaS founder/COO entering the US. MVP covers select
 - AXHub deployment only after all local checks pass AND user explicitly approves it in a later message.
 
 ## P1 later
-Expert review, uploaded binary document extraction, regulatory change alerts, distributed job workers, email verification/recovery delivery, more jurisdictions. Organization authentication, RBAC and PostgreSQL are implemented in the current scope.
+Uploaded binary document extraction, regulatory change alerts, distributed job workers, email verification/recovery delivery, more jurisdictions. Organization authentication, RBAC and PostgreSQL are implemented in the current scope.
 
 ## Not in MVP
 Actual entity formation, tax filing, legal certification, payment, automated submissions, real-time nationwide law coverage, guaranteed cost savings.
@@ -43,10 +43,10 @@ Sell time savings in legal preparation and continuous workflow management, not a
 
 
 ## Commercialization and billing
-See BILLING.md. Groble is a **candidate** for self-serve checkout and recurring billing, subject to verification. Enterprise contracting, terms acceptance, and payment are separate processes. Billing is post-MVP; no fake paid checkout.
+See BILLING.md. Groble is a **candidate** for self-serve checkout and recurring billing, subject to verification. Enterprise contracting, terms acceptance, and payment are separate processes. Configured hosted payment links are implemented with a Korean-only consent flow. Verified provider payment reconciliation and paid activation remain deferred; no fake paid checkout.
 ## Current organization and commercial journey
 
-Public landing → real signup/login → company create or invite application → Draft organization with Owner and workspace → plan selection → versioned service terms → Free activation or pending verified paid/enterprise workflow → organization workspace → project creation → project-only regulatory operations. Before approval/activation/project selection no project navigation or internal data is available. Every API enforces identity, membership and project scope. Current paid checkout is visibly disabled because provider API/webhook requirements are unverified; Enterprise requests record Pending human review. Project Documents support text create/read/delete. Quick Assessment is immediate; Deep Review is an independently polled/cancellable persisted task with progressive validated topics.
+Public landing → real signup/login → company create or invite application → Draft organization with Owner and workspace → plan selection → versioned service terms → Free activation or pending verified paid/enterprise workflow → organization workspace → project creation → project-only regulatory operations. Before approval/activation/project selection no project navigation or internal data is available. Every API enforces identity, membership and project scope. Configured Startup/Business hosted links can be opened only from the explicit Korean checkout flow after server authorization and current terms acceptance. Missing or invalid links stay unavailable. Provider verification and paid activation remain unimplemented; Enterprise requests record Pending human review. Project Documents support text create/read/delete. Quick Assessment is immediate; Deep Review is an independently polled/cancellable persisted task with progressive validated topics.
 
 ## Expert marketplace and sales operations
 One account may be both a company member and an independent expert. Experts manage private-by-default credentials/resume/portfolio and their own priced service catalog. Public marketplace results come from registered profiles only. Verification requires a separately allowlisted human reviewer; self-reported information is labeled. Company-approved resource snapshots, not general organization membership, grant expert access to an engagement. Acceptance and quote agreement do not execute a legal engagement. Verified credentials, conflict clearance, both parties agreement and human contract confirmation precede collaborative access. Expiry, cancellation and revocation remove expert access without deleting company records. No professional payment, referral fee or settlement is implemented.
@@ -64,3 +64,19 @@ Reusable Enterprise Standard, Legal Operations and Enterprise Plus templates are
 The application supports Korean and English through explicit `/ko` and `/en` URLs and a visible language switcher. Anonymous language choices persist in a browser cookie; authenticated regular users and separately authenticated administrators also save their own preference. Missing expert translations fall back to the original submitted text. User names, professional credentials, identifiers and source documents are not machine-translated or rewritten.
 Expert residence country, qualification country, licensed jurisdictions and countries served are separate self-reported fields. Unknown legacy values remain unknown; a stated jurisdiction never proves licensure or implies residence. Expert profiles and services can supply separate Korean/English descriptive text. Private portfolio descriptions stay private in every language.
 Pricing keeps the four existing plan cards and activation/payment/Enterprise inquiry flows. An additional comparison table groups Workspace, Legal Intelligence, Expert services and Administration. Numeric allowances and feature availability come from the central entitlement registry; Enterprise contractual settings remain custom. Cost review organizes saved matters without estimating amounts. Priority support records requests without a delivery or SLA promise.
+
+
+## Organization identity and Korean checkout
+An Owner or Admin can upload, replace or remove one organization logo. Approved members can read it; Pending applicants and unrelated tenants cannot. Accept PNG, JPEG or WebP up to 2 MiB, reject animation and malformed data, and fully decode/re-encode a single image as lossless WebP. Limits are 4096 pixels per dimension and 16,777,216 pixels total. Preserve aspect ratio without resizing; honor orientation. Binary document upload remains outside this narrow logo feature.
+
+Logo bytes use private S3-compatible storage and database-scoped metadata, not the web container filesystem or public external image fallbacks. Missing logos render company initials without an image request. Borderless brand assets remain unchanged.
+
+English checkout displays exactly: “Checkout is currently available in Korean only. You can continue to the Korean checkout page.” The user must select “Continue in Korean” before reaching Korean pricing, then explicitly open the payment page. Temporary checkout language must preserve the saved account language. A return page cannot verify a payment or activate access. Provider return-URL configuration support is unverified.
+
+## Demonstration data and release boundary
+A separately authorized production demonstration seed created 28 fictional accounts: three Active Free organizations with Owner/Admin/two Members/Viewer/Pending each, eight independent unverified experts, one unaffiliated user and one Draft Enterprise Owner. The eight public Pending Verification profiles and example services are explicitly fictional and unavailable for engagement. No real license numbers, verified badges, payments, model results or new external notifications were created. No platform administrator was provisioned through signup or a privilege bypass.
+
+Credentials and resumable seed state exist only in the ignored, permission-0600 local file `.local/demo-accounts.json`; never publish it. The logo/Korean-checkout code changes are local preparation only. The existing deployment at `ac794a0` is unchanged by this work and requires fresh explicit approval before any source push or deployment.
+
+
+Trusted local-only provisioning separately created two strong, non-demo platform administrator accounts in the loopback development database using the existing Better Auth hashing/provisioning path. Their private records are appended as `localPlatformAdmins` in the ignored 0600 manifest. These are **not** web production accounts: the authorized web dataset remains 28 accounts, with zero remotely provisioned platform administrators. Ordinary signup still cannot create staff, and no bypass or production bootstrap was used.

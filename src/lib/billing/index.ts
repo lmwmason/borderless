@@ -13,12 +13,13 @@ const PlanSchema=z.enum(['Free','Startup','Business','Enterprise']);
 const configurationMessage='Groble checkout and webhook authenticity are not verified or configured. No charges or paid activation are available. Enterprise agreements require separate human approval.';
 
 async function snapshot(client:QueryClient,userId:string,orgId:string){
+ const {configuredPaymentLink}=await import('./payment-links');
  const org=await organizationAccess(client,userId,orgId);
  if(org.status!=='Active'&&!['Owner','Admin'].includes(org.role))throw new ApiError(403,'ORGANIZATION_INACTIVE','Organization activation is required.');
  const subscription=(await client.query('SELECT status,expires_at FROM subscriptions WHERE organization_id=$1',[orgId])).rows[0];
  const acceptance=(await client.query('SELECT id FROM contract_acceptances WHERE organization_id=$1 AND terms_version=$2 AND terms_hash=$3 LIMIT 1',[orgId,TERMS_VERSION,TERMS_HASH])).rows[0];
  const enterprise=(await client.query('SELECT id,status,created_at,notes,company_snapshot FROM enterprise_requests WHERE organization_id=$1 ORDER BY created_at DESC LIMIT 1',[orgId])).rows[0];
- return {plan:org.plan as Plan,organizationStatus:org.status,subscription:{status:subscription?.status??'Pending',expiresAt:subscription?.expires_at?new Date(subscription.expires_at).toISOString():null},termsVersion:TERMS_VERSION,termsText:TERMS_TEXT,accepted:Boolean(acceptance),checkoutAvailable:false,configurationMessage,enterpriseRequest:enterprise?{id:enterprise.id,status:enterprise.status,notes:enterprise.notes,companyInfo:enterprise.company_snapshot,createdAt:new Date(enterprise.created_at).toISOString()}:null};
+ return {plan:org.plan as Plan,organizationStatus:org.status,subscription:{status:subscription?.status??'Pending',expiresAt:subscription?.expires_at?new Date(subscription.expires_at).toISOString():null},termsVersion:TERMS_VERSION,termsText:TERMS_TEXT,accepted:Boolean(acceptance),checkoutAvailable:(org.plan==='Startup'||org.plan==='Business')&&Boolean(configuredPaymentLink(org.plan)),checkoutLocale:'ko' as const,configurationMessage,enterpriseRequest:enterprise?{id:enterprise.id,status:enterprise.status,notes:enterprise.notes,companyInfo:enterprise.company_snapshot,createdAt:new Date(enterprise.created_at).toISOString()}:null};
 }
 
 export const billingService={
@@ -65,12 +66,10 @@ export const billingService={
    return snapshot(client,user.id,orgId);
   });
  },
- async checkout(user:AccountUser,orgId:string):Promise<never>{
-  await transaction(async client=>{
-   await organizationAccess(client,user.id,orgId,{admin:true,lock:true});
-   await audit(client,user.id,orgId,'billing.checkout_unavailable',{});
-  });
-  throw new ApiError(503,'CONFIG_REQUIRED',configurationMessage);
+ async checkout(user:AccountUser,orgId:string,contextLocale:string='en'){
+  const current=await snapshot(getPool(),user.id,orgId);
+  const {paymentLink}=await import('./payment-links');
+  return paymentLink(user,orgId,current.plan,contextLocale);
  },
  async cancel(user:AccountUser,orgId:string){
   return transaction(async client=>{

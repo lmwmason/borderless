@@ -127,5 +127,14 @@
   "Member": "구성원",
   "Viewer": "뷰어",
   "Legal Intelligence": "법률 인텔리전스",
-  "Deep legal review": "심층 법률 검토"
+  "Deep legal review": "심층 법률 검토",
+  "Your account language preference will remain unchanged.": "계정의 기본 언어 설정은 변경되지 않습니다.",
+  "Opening Korean checkout…": "한국어 결제 화면 여는 중…",
+  "Continue to Korean payment page": "한국어 결제 페이지로 계속",
+  "Continue to checkout": "결제 계속하기",
+  "The Groble payment page is provided in Korean. Check the merchant, price and payment terms before continuing.": "Groble 결제 화면은 한국어로 제공됩니다. 계속하기 전에 판매자, 금액, 결제 조건을 확인하세요.",
+  "Unable to open Korean checkout.": "한국어 결제 화면을 열지 못했습니다.",
+  "Return to English billing": "영어 결제 설정으로 돌아가기",
+  "Checkout is currently available in Korean only. You can continue to the Korean checkout page.": "현재 결제는 한국어로만 제공됩니다. 한국어 결제 페이지로 계속할 수 있습니다.",
+  "{plan} selected. Choose your organization and review the terms below.": "{plan} 요금제를 선택했습니다. 아래에서 결제 조직을 선택하고 약관을 확인해 주세요."
 }
