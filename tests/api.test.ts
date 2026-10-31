@@ -41,6 +41,30 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  const scenarioA=workspace.scenarios[0];
  const scenarioB=await (await scenarioRoute.POST(request('/api/scenarios','POST',{name:'California employee',company:{...company,usEmployees:1}}))).json() as Scenario;
  const scenarioC=await (await scenarioRoute.POST(request('/api/scenarios','POST',{name:'US subsidiary',company:{...company,usEntity:true,salesModel:'subsidiary'}}))).json() as Scenario;
+ // Configured credentials are synthetic; intercepted transport guarantees no live request.
+ const originalFetch=globalThis.fetch;
+ process.env.NVIDIA_API_KEY='qa-dummy-never-a-live-key';
+ let modelRequests=0;
+ globalThis.fetch=async(_url,init)=>{
+  modelRequests++;
+  const payload=JSON.parse(String(init?.body));
+  assert.equal(payload.model,'nvidia/nemotron-3.5-super-vl-120b-a12b');
+  assert.deepEqual(payload.chat_template_kwargs,{enable_thinking:true});
+  const supplied=JSON.parse(payload.messages[1].content);
+  return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({sourceIds:supplied.sourceIds,questions:[],childTopics:[],review:{proposedStatus:supplied.ruleStatus??'review_required',missingFacts:[],counterexampleFactKeys:[]}})}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}});
+ };
+ try {
+  const denied=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenarioA.id}));
+  assert.equal(denied.status,400);assert.equal((await denied.json()).error.code,'CONSENT_REQUIRED');
+  assert.equal(modelRequests,0,'missing consent must not send model request');
+  const allowed=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenarioA.id,consent:true}));
+  assert.equal(allowed.status,200);
+  const modelAssessment=await allowed.json() as Assessment;
+  assert.ok(modelRequests>0);
+  assert.equal(modelAssessment.modelId,'nvidia/nemotron-3.5-super-vl-120b-a12b');
+  assert.equal(modelAssessment.modelStatus,'available');
+  assert.ok((modelAssessment.metrics?.totalTokens??0)>0);
+ } finally {globalThis.fetch=originalFetch;delete process.env.NVIDIA_API_KEY;}
  const assessments:Assessment[]=[];
  for(const scenario of [scenarioA,scenarioB,scenarioC]){
   const response=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenario.id}));

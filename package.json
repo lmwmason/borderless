@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts src/lib/legal/*.test.ts src/lib/workspace/*.test.ts"
+    "test": "tsx --test tests/*.test.ts src/lib/legal/*.test.ts src/lib/workspace/*.test.ts",
+    "verify:nvidia": "node --env-file-if-exists=.env.local --import tsx scripts/verify-nvidia.ts",
+    "test:e2e": "playwright test tests/browser.spec.ts --workers=1"
   },
   "dependencies": {
     "next": "^16.0.0",

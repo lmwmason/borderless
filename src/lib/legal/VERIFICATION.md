@@ -34,3 +34,26 @@ applied. Known fact requests are rendered with deterministic wording.
 Unit command: rtk proxy npx tsx --test src/lib/legal/*.test.ts
 Real NVIDIA connectivity belongs to the server integration and is not verified
 by these unit tests. No API key was available to this agent.
+
+
+## Nemotron structured review integration
+
+The fixed reasoning model is configured by the orchestrator's server-side NVIDIA
+client. Each model call performs issue decomposition, source selection,
+applicability challenge, missing-fact discovery and exception/counterexample
+review together. The engine supplies the deterministic ruleStatus and
+missingFacts and accepts optional structured review and telemetry fields.
+
+A proposed status can only preserve the deterministic result or lower certainty:
+disagreement or an exception requires review; existing unknown facts remain
+insufficient_data. Model missing facts are allowlisted against curated source
+requirements and company/rule fact keys. No model proposal certifies applicability
+or non-applicability. Free-form model conclusions remain excluded.
+
+Budgets: depth <= 3, nodes <= 12, calls <= 15, total review deadline 90 seconds,
+per-call deadline 30 seconds. HTTP abort belongs to the server client. The local
+deadline also bounds a stalled callback and returns partial results honestly.
+
+Assessment metrics aggregate model calls, reported latency (measured fallback)
+and actual prompt/completion/total tokens. Missing usage is null, never estimated
+or falsely zero. A failure with unreported usage makes aggregate usage unknown.
