@@ -1,2 +1,2 @@
-import { WorkspaceApp } from '@/components/workspace-app';
-export default function Page(){return <WorkspaceApp/>}
+import { AccountApp } from '@/components/account-app';
+export default function Page(){return <AccountApp/>}

@@ -1,12 +1,48 @@
-import {test,expect} from '@playwright/test';
-test.use({baseURL:process.env.BORDERLESS_QA_URL||'http://localhost:3217'});
+import {test,expect,type Page} from '@playwright/test';
+test.use({baseURL:process.env.BORDERLESS_QA_URL||'http://localhost:3217',ignoreHTTPSErrors:true});
+type BrowserScope={orgName:string;projectName:string;projectId:string;organizationId:string};
+async function enterNewProject(page:Page):Promise<BrowserScope>{
+ const id=Date.now()+'-'+Math.random().toString(16).slice(2,8);
+ const orgName='Browser organization '+id,projectName='Market entry '+id;
+ await page.goto('/');
+ await expect(page.getByRole('navigation',{name:'Main navigation',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Create account',exact:true}).click();
+ await page.getByLabel('Your name',{exact:true}).fill('Browser QA '+id);
+ await page.getByLabel('Email',{exact:true}).fill('browser-'+id+'@example.com');
+ await page.getByLabel('Password',{exact:true}).fill('Synthetic-browser-password-2026!');
+ await page.locator('form').getByRole('button',{name:'Create account',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Your organizations',exact:true})).toBeVisible();
+ await page.getByLabel('Organization name',{exact:true}).fill(orgName);
+ await page.getByRole('button',{name:'Create organization',exact:true}).click();
+ await expect(page.getByText('Organization setup is incomplete.',{exact:false})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Projects',exact:true})).toBeDisabled();
+ await page.getByRole('checkbox',{name:/I accept the displayed application terms/}).check();
+ await page.getByRole('button',{name:'Record terms acceptance',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Terms accepted',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Activate Free workspace',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Create a project',exact:true})).toBeVisible();
+ await page.getByLabel('Project name',{exact:true}).fill(projectName);
+ await page.getByRole('textbox',{name:/^Project description/}).fill('Synthetic browser test project');
+ const response=page.waitForResponse(r=>/\/api\/organizations\/[^/]+\/projects$/.test(r.url())&&r.request().method()==='POST');
+ await page.getByRole('button',{name:'Create project',exact:true}).click();
+ const created=await response;expect(created.status()).toBe(200);const project=await created.json();
+ await page.locator('.project-tile').filter({has:page.getByRole('heading',{name:projectName,exact:true})}).click();
+ await expect(page.getByRole('heading',{name:'Overview',exact:true})).toBeVisible();
+ await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+ return {orgName,projectName,projectId:project.id,organizationId:project.organizationId};
+}
+async function reopenProject(page:Page,scope:BrowserScope){
+ await page.locator('.organization-tile').filter({has:page.getByRole('heading',{name:scope.orgName,exact:true})}).click();
+ await page.locator('.project-tile').filter({has:page.getByRole('heading',{name:scope.projectName,exact:true})}).click();
+ await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+}
+const browserCompany={id:'browser-company',name:'Browser QA SaaS',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()};
+
 test('desktop company → assessment → matter task → persistent edit → scenario comparison',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});
  const taskTitle='Browser review task '+Date.now();
  const pageErrors:string[]=[];page.on('pageerror',error=>pageErrors.push(error.message));
- await page.goto('/');
- await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
- await expect(page.getByRole('heading',{name:'Overview',exact:true})).toBeVisible();
+ const scope=await enterNewProject(page);
  if(await page.getByRole('button',{name:'Save company profile',exact:true}).isVisible()){
   await page.getByLabel('Company name',{exact:true}).fill('QA Browser SaaS');
   await page.getByRole('combobox',{name:'Sales model',exact:true}).selectOption('remote');
@@ -35,6 +71,7 @@ test('desktop company → assessment → matter task → persistent edit → sce
  await page.getByRole('button',{name:/^Tasks/}).click();
  await expect(page.getByRole('button',{name:taskTitle,exact:true})).toBeVisible();
  await page.reload();
+ await reopenProject(page,scope);
  await page.getByRole('button',{name:/^Tasks/}).click();
  await page.getByRole('button',{name:taskTitle,exact:true}).click();
  await expect(page.getByLabel('Assignee',{exact:true})).toHaveValue('QA owner');
@@ -61,16 +98,11 @@ test('desktop company → assessment → matter task → persistent edit → sce
  expect(pageErrors).toEqual([]);
  await page.screenshot({path:'/tmp/borderless-desktop-qa.png',fullPage:true});
 });
-test('mobile 375px navigation, responsive canvas and keyboard dialog close',async({page,request})=>{
- const workspace=await (await request.get('/api/workspace')).json();
- if(!workspace.company) {
-  const saved=await request.put('/api/company',{data:{id:'qa-mobile',name:'Mobile QA SaaS',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()}});
-  expect(saved.ok()).toBe(true);
- }
+test('mobile 375px authenticated onboarding, navigation and keyboard dialog close',async({page})=>{
  await page.setViewportSize({width:375,height:812});
- await page.goto('/');
- await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
- await expect(page.getByRole('heading',{name:'Overview',exact:true})).toBeVisible();
+ const scope=await enterNewProject(page);
+ expect((await page.request.put('/api/company',{headers:{'x-project-id':scope.projectId},data:browserCompany})).ok()).toBe(true);
+ await page.reload();await reopenProject(page,scope);
  await page.getByRole('button',{name:'Tasks',exact:false}).click();
  await page.getByRole('button',{name:'Add task',exact:false}).click();
  await expect(page.getByRole('dialog')).toBeVisible();
@@ -80,14 +112,13 @@ test('mobile 375px navigation, responsive canvas and keyboard dialog close',asyn
  await page.screenshot({path:'/tmp/borderless-mobile-qa.png',fullPage:true});
 });
 
-test('controlled asynchronous Deep Review shows progress, survives reload and cancels without any real model call',async({page,request})=>{
- const initial=await (await request.get('/api/workspace')).json();
- if(!initial.company) {
-  expect((await request.put('/api/company',{data:{id:'qa-deep-browser',name:'Deep Browser QA',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()}})).ok()).toBe(true);
- }
- const workspace=await (await request.get('/api/workspace')).json();
+test('controlled asynchronous Deep Review shows progress, survives reload and cancels without any real model call',async({page})=>{
+ const scope=await enterNewProject(page);
+ const headers={'x-project-id':scope.projectId};
+ expect((await page.request.put('/api/company',{headers,data:browserCompany})).ok()).toBe(true);
+ const workspace=await (await page.request.get('/api/workspace',{headers})).json();
  const scenario=workspace.scenarios[0];
- const checked=await request.post('/api/assessments',{data:{scenarioId:scenario.id}});
+ const checked=await page.request.post('/api/assessments',{headers,data:{scenarioId:scenario.id}});
  expect(checked.ok()).toBe(true);
  const quick=await checked.json();
  const result={...quick,id:'qa-controlled-assessment',kind:'deep',partial:true,modelStatus:'available',limitations:[...quick.limitations,'Controlled browser-test fixture; no actual inference.']};
@@ -114,8 +145,7 @@ test('controlled asynchronous Deep Review shows progress, survives reload and ca
   }
   await route.fulfill({json:job});
  });
- await page.goto('/');
- await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+ await page.reload();await reopenProject(page,scope);
  await expect(page.getByRole('button',{name:'Deep Review',exact:true})).toBeDisabled();
  await page.getByRole('checkbox').check();
  await page.getByRole('button',{name:'Deep Review',exact:true}).click();
@@ -132,8 +162,7 @@ test('controlled asynchronous Deep Review shows progress, survives reload and ca
  await expect(page.getByText('Rule screening · Deep Review pending',{exact:true}).first()).toBeVisible();
  await expect(page.getByText('Deep Review completed',{exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Overview',exact:true}).click();
- await page.reload();
- await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+ await page.reload();await reopenProject(page,scope);
  await expect(progress.getByText('Current topic: California privacy',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Cancel Deep Review',exact:true}).click();
  await expect(progress.getByText('Review cancelled. Completed findings are retained.',{exact:true})).toBeVisible();
@@ -141,4 +170,40 @@ test('controlled asynchronous Deep Review shows progress, survives reload and ca
  await expect(progress.getByText('Available findings have been retained. Unfinished topics remain unreviewed.',{exact:true})).toBeVisible();
  expect(started).toBe(1);expect(cancelled).toBe(1);expect(polls).toBeGreaterThan(0);
  await page.screenshot({path:'/tmp/borderless-deep-review-qa.png',fullPage:true});
+});
+
+test('invited browser account remains outside project until explicit owner approval',async({page,browser})=>{
+ const scope=await enterNewProject(page);
+ const issued=await page.request.post('/api/organizations/'+scope.organizationId+'/invites',{data:{expiresInHours:1}});
+ expect(issued.ok()).toBe(true);const invite=await issued.json();
+ const applicantContext=await browser.newContext({baseURL:process.env.BORDERLESS_QA_URL||'http://localhost:3217',ignoreHTTPSErrors:true});
+ try{
+  const applicant=await applicantContext.newPage();const id=Date.now()+'-'+Math.random().toString(16).slice(2,8);
+  await applicant.goto('/');
+  await expect(applicant.getByRole('navigation',{name:'Main navigation',exact:true})).toHaveCount(0);
+  await applicant.getByRole('button',{name:'Create account',exact:true}).click();
+  await applicant.getByLabel('Your name',{exact:true}).fill('Pending applicant '+id);
+  await applicant.getByLabel('Email',{exact:true}).fill('pending-'+id+'@example.com');
+  await applicant.getByLabel('Password',{exact:true}).fill('Synthetic-browser-password-2026!');
+  await applicant.locator('form').getByRole('button',{name:'Create account',exact:true}).click();
+  await expect(applicant.getByRole('heading',{name:'Your organizations',exact:true})).toBeVisible();
+  await expect(applicant.getByRole('navigation',{name:'Main navigation',exact:true})).toHaveCount(0);
+  await applicant.getByLabel('Invite code',{exact:true}).fill(invite.code);
+  await applicant.getByRole('button',{name:'Request to join',exact:true}).click();
+  await expect(applicant.getByText('Pending approval',{exact:true})).toBeVisible();
+  await expect(applicant.locator('.organization-tile')).toHaveCount(0);
+  const denied=await applicant.request.get('/api/workspace',{headers:{'x-project-id':scope.projectId,'x-organization-id':scope.organizationId}});
+  expect(denied.status()).toBe(403);
+  const account=await (await applicant.request.get('/api/account')).json();
+  const detail=await (await page.request.get('/api/organizations/'+scope.organizationId)).json();
+  const pending=detail.requests.find((r:{userId:string})=>r.userId===account.user.id);expect(pending).toBeTruthy();
+  const approved=await page.request.patch('/api/organizations/'+scope.organizationId+'/requests/'+pending.id,{data:{decision:'approve',role:'Member'}});
+  expect(approved.ok()).toBe(true);
+  await applicant.getByRole('button',{name:'Refresh memberships',exact:true}).click();
+  await applicant.locator('.organization-tile').filter({has:applicant.getByRole('heading',{name:scope.orgName,exact:true})}).click();
+  await applicant.locator('.project-tile').filter({has:applicant.getByRole('heading',{name:scope.projectName,exact:true})}).click();
+  await expect(applicant.getByRole('heading',{name:'Overview',exact:true})).toBeVisible();
+  await expect(applicant.getByRole('navigation',{name:'Main navigation',exact:true})).toBeVisible();
+  await applicant.screenshot({path:'/tmp/borderless-approved-member-qa.png',fullPage:true});
+ }finally{await applicantContext.close();}
 });
