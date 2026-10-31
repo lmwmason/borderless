@@ -1,0 +1,12 @@
+version: axhub/v1
+name: borderless
+runtime:
+  port: 8080
+  health_path: /api/health
+build:
+  deploy_method: docker
+  dockerfile: Dockerfile
+env:
+  required:
+    - name: NVIDIA_API_KEY
+      scope: runtime
