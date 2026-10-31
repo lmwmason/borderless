@@ -1,8 +1,7 @@
 # Slack sales notifications — delivery disabled by default
 
 No Slack app, channel, installation or webhook was created for this implementation,
-and no real message was sent. Development and automated tests use injected mocks
-only. Actual workspace setup and first delivery require explicit approval and the
+during the initial implementation. Automated tests use injected mocks only. See the authorized live verification below for the two subsequent real messages. Actual workspace setup and first delivery require explicit approval and the
 selected workspace/channel; AXHub deployment remains separately gated.
 
 ## What was verified
@@ -34,8 +33,7 @@ See [apps.manifest.create](https://docs.slack.dev/reference/methods/apps.manifes
    credentials, query/hash or alternate hosts. Redirects are rejected. GovSlack and
    Workflow Builder destinations are not implemented.
 4. Set BORDERLESS_PUBLIC_URL to the real canonical HTTPS application origin, with
-   no path/query/credentials. It must resolve publicly; the operator must verify
-   the deployment domain. The application rejects IP literals, localhost and common
+   no path/query/credentials when a real public domain is confirmed. This setting is optional for delivery; without a valid origin the message omits its admin-link button. Never invent a public domain. The operator must verify the deployment domain before setting it. The application rejects IP literals, localhost and common
    private/development aliases, and never uses request headers or localhost as a
    fallback. The link targets /admin/inquiries?inquiryId=<id>; opening it still
    requires a platform-operator session.
@@ -145,12 +143,23 @@ cooldown across concurrent workers, bounded retries, operator
 and inquiry binding, stale-lease recovery, timeout abort and concurrent batch lease
 safety. Transport is mocked; no real Slack endpoint was called.
 
-Actual app reuse/creation, workspace installation, chosen channel, issued webhook,
-canonical hosted admin URL, live acknowledgement and hosted-worker recovery remain
-unverified until separately approved. Email delivery is not implemented by this
+Independent app inventory, channel-display inspection, canonical hosted admin URL and hosted-worker recovery remain unverified. An existing user-provided webhook was subsequently acknowledged in the approved local verification below. Email delivery is not implemented by this
 adapter. Customer inquiry creation must remain successful when Slack is disabled
 or delivery later fails; notification delivery never activates billing or signs a
 contract.
 
 ## Future event routing
 The adapter interface is generic over its payload and channel. The event/channel/recipient-alias routing catalog separates sales, expert operations, verification, billing and security recipients; only the sales route is enabled. The current worker implements sales Slack delivery only. Future event payload validation, destination resolution and email transport remain explicitly unimplemented; disabled catalog entries do not enqueue or send notifications. No customer or secret destination is stored in this catalog.
+
+## Authorized live verification — 2026-10-31
+The user explicitly approved one connection message and one synthetic Enterprise inquiry alert. The existing ignored .env.local webhook was valid. No Slack app/channel was created or modified. Both real HTTPS POSTs returned HTTP200 with the ok acknowledgement. The inquiry used the actual Better Auth account, Organization/Billing service, PostgreSQL and notification worker path. Its outbox transitioned Pending → Sent, attempts1, sent_at recorded. Duplicate submission and repeated scoped processing produced no additional POST. Exactly two native requests were made; no customer data was sent.
+
+Synthetic inquiry ID: 3b362f94-ddf6-42ba-9f12-ff4b8853aa46. Outbox ID: 8a9ac7b6-96e4-4f2a-84ff-1990de5d09d3. The private local checkpoint is .local/slack-live-verification.json (ignored). Re-running the script reports that checkpoint and does not resend; an incomplete/uncertain checkpoint also blocks automatic resend. Do not delete it to repeat a live test without obtaining the necessary new approval.
+
+Command (only with separate live-send authorization):
+
+    node --env-file=.env.local --import tsx scripts/verify-slack.ts --send-approved-two
+
+The script accepts only loopback PostgreSQL connections, enables native delivery solely inside its own local process, and restores process flags. It never edits .env.local or starts a background worker. notificationIds scopes recovery, disabling, exhaustion maintenance and claims to the chosen record, preserving unrelated jobs. A fetch guard enforces the two-message budget and allowed synthetic IDs. Live errors are scrubbed and ambiguous attempts are never automatically resent. Failure/retry cases are exercised with mocks, never additional real messages.
+
+No public application origin was configured, so no administrator link or localhost URL was included. HTTP200/ok is Slack delivery acceptance, not independent proof of human reading or channel-screen rendering; no channel-read bot token was available or used. AXHub delivery/egress remains untested and no deployment occurred.

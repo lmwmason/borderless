@@ -1,3 +1,17 @@
+# Approved Slack live integration verification — 2026-10-31
+
+- Existing ignored .env.local webhook configured and validated without printing it. No Slack app/channel/install was created.
+- Exactly **two** authorized native requests: one synthetic connection message and one actual Enterprise Inquiry → PostgreSQL → Outbox → Slack alert. Both returned HTTP200/ok.
+- Synthetic inquiry 3b362f94-ddf6-42ba-9f12-ff4b8853aa46; outbox 8a9ac7b6-96e4-4f2a-84ff-1990de5d09d3: Pending → Sent, attempts1, sent_at recorded. Duplicate submission plus repeated scoped worker execution made no third request.
+- Public origin absent: admin action link omitted, no localhost or invented domain sent. No customer/contact/legal/document data sent. HTTP acceptance was verified; independent Slack channel-screen rendering/human reading was not checked.
+- Activation existed only in the standalone local verification process; no .env.local changes or background sender were introduced. Checkpoint prevents a rerun from resending an acknowledged or ambiguous previous attempt.
+- Automated suite **129/129 passed**, no skipped tests. Notification integration suite **17/17 passed** using mocked transports, including missing webhook fail-closed, optional origin, scoped queue maintenance, failure categories and bounded retry. Typecheck and production build passed. Existing browser evidence below remains the earlier13/13 run; browser tests were not repeated for these server-only changes.
+- Actual configured secrets, including the new webhook, were absent from unignored Git source and .next/static client assets. .env.local remains ignored/untracked. Git push and AXHub deployment were not executed.
+
+Earlier release evidence follows as historical context; this section supersedes prior statements that no live Slack verification had occurred.
+
+---
+
 # Final local integration verification — 2026-10-31
 
 - Automated PostgreSQL/unit/API/security suite: **126/126 passed**, zero skipped. Original authentication, organization, legal, workflow and billing regressions remain included. Test files run serially because each deliberately changes the trusted global operator configuration against one shared test database; concurrent requests inside individual tests still exercise locking, claims and rate limits.
