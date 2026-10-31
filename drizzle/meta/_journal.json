@@ -127,6 +127,55 @@
       "when": 1793426933716,
       "tag": "0017_sales_crm_security",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793429232062,
+      "tag": "0018_separate_admin_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793429232678,
+      "tag": "0019_admin_identity_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793429287820,
+      "tag": "0020_enterprise_contract_entitlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793429312718,
+      "tag": "0021_enterprise_entitlement_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793429461064,
+      "tag": "0022_scoped_entitlement_read_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793429611957,
+      "tag": "0023_reusable_enterprise_contract_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793429636274,
+      "tag": "0024_enterprise_template_grants",
+      "breakpoints": true
     }
   ]
 }

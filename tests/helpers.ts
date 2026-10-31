@@ -25,6 +25,15 @@ export async function register(prefix='qa'){
  const payload=await response.json();const user=payload.user as AccountUser;
  return {user,email,cookie:responseCookie(response),password:testPassword};
 }
+export async function registerAdmin(prefix='qa-admin'){
+ const {provisionAdmin,adminSignIn}=await import('../src/lib/admin/auth');
+ const password=randomUUID()+randomUUID()+'!aA9',loginId=prefix+'-'+randomUUID();
+ const user=await provisionAdmin({loginId,password,name:'Synthetic platform administrator',demo:false});
+ const headers={origin:testOrigin(),host:new URL(testOrigin()).host,'Content-Type':'application/json','x-test-ip':'198.18.'+randomInt(1,250)+'.'+randomInt(1,250)};
+ const response=await adminSignIn(new Request(testOrigin()+'/api/admin/login',{method:'POST',headers}),{loginId,password});
+ assert.equal(response.status,200,'synthetic separate administrator sign-in must succeed');
+ return {user,loginId,password,cookie:responseCookie(response),response};
+}
 export async function activateOrganization(user:AccountUser,name='QA organization'){
  const organization=await organizationService.create(user,{name});
  await billingService.acceptTerms(user,organization.id,{termsVersion:TERMS_VERSION,accepted:true});

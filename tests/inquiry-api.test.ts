@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {register,testOrigin} from './helpers';
+import {register,registerAdmin,testOrigin} from './helpers';
 import {organizationService} from '../src/lib/organizations';
 import {billingService} from '../src/lib/billing';
 import {GET as list} from '../src/app/api/admin/inquiries/route';
@@ -10,7 +10,7 @@ import {POST as retry} from '../src/app/api/admin/inquiries/[id]/notifications/[
 
 test('sales API requires real platform session, validates mutations and never grants Enterprise entitlement',async()=>{
  const original=process.env.BORDERLESS_PLATFORM_ADMIN_IDS;
- const owner=await register('crm-api-owner'),operator=await register('crm-api-operator'),org=await organizationService.create(owner.user,{name:'Synthetic sales API company'});
+ const owner=await register('crm-api-owner'),operator=await registerAdmin('crm-api-operator'),org=await organizationService.create(owner.user,{name:'Synthetic sales API company'});
  await billingService.selectPlan(owner.user,org.id,'Enterprise');
  const submitted=await billingService.requestEnterprise(owner.user,org.id,{notes:'Synthetic API introduction'}),id=submitted.enterpriseRequest!.id;
  const ctx={params:Promise.resolve({id})};
@@ -18,8 +18,8 @@ test('sales API requires real platform session, validates mutations and never gr
  try{
   process.env.BORDERLESS_PLATFORM_ADMIN_IDS=operator.user.id;
   assert.equal((await list(request('/api/admin/inquiries'))).status,401);
-  assert.equal((await list(request('/api/admin/inquiries',owner.cookie))).status,403);
-  assert.equal((await detail(request('/api/admin/inquiries/'+id,owner.cookie),ctx)).status,403);
+  assert.equal((await list(request('/api/admin/inquiries',owner.cookie))).status,401);
+  assert.equal((await detail(request('/api/admin/inquiries/'+id,owner.cookie),ctx)).status,401);
   assert.equal((await list(request('/api/admin/inquiries?salesStatus=Won',operator.cookie))).status,200);
   assert.equal((await update(request('/api/admin/inquiries/'+id,operator.cookie,'PATCH',{salesStatus:'Contacted',assigneeId:operator.user.id}),ctx)).status,200);
   assert.equal((await note(request('/api/admin/inquiries/'+id+'/notes',operator.cookie,'POST',{body:'Internal only sales note'}),ctx)).status,200);

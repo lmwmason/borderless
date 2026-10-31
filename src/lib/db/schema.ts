@@ -207,3 +207,45 @@ export const notificationOutbox=pgTable('notification_outbox',{
  pgPolicy('notification_insert',{for:'insert',to:'public',withCheck:sql`${platformAccess} or ${notificationWorker}`}),
  pgPolicy('notification_update',{for:'update',to:'public',using:sql`${platformAccess} or ${notificationWorker}`,withCheck:sql`${platformAccess} or ${notificationWorker}`})
 ]).enableRLS();
+
+export const adminAccounts=pgTable('admin_accounts',{
+ userId:text('user_id').primaryKey().references(()=>authUser.id,{onDelete:'cascade'}),loginId:text('login_id').notNull(),isDemo:boolean('is_demo').notNull().default(false),enabled:boolean('enabled').notNull().default(true),createdAt:time('created_at').notNull().defaultNow(),updatedAt:time('updated_at').notNull().defaultNow()
+},t=>[uniqueIndex('admin_login_unique').on(t.loginId),index('admin_enabled_idx').on(t.enabled,t.isDemo)]);
+
+const contractPlatform=sql`(current_setting('borderless.platform_actor',true)='on' and exists(select 1 from platform_operator_grants g where g.user_id=${actor} and g.active))`;
+const testContractAllowed=sql`current_setting('borderless.contract_test_allowed',true)='on'`;
+const assignedEntitlementRead=(org:unknown)=>sql`current_setting('borderless.entitlement_read_org',true)=${org} and exists(select 1 from engagements e where e.id=current_setting('borderless.entitlement_read_engagement',true) and e.organization_id=${org} and e.expert_user_id=${actor} and e.status not in ('Draft','Canceled') and e.revoked_at is null and (e.access_expires_at is null or e.access_expires_at>now()))`;
+export const enterpriseContractTemplates=pgTable('enterprise_contract_templates',{
+ id:text('id').primaryKey(),name:text('name').notNull(),currentVersion:integer('current_version').notNull().default(1),status:text('status').notNull().default('Active'),createdBy:text('created_by').notNull().references(()=>authUser.id),createdAt:time('created_at').notNull().defaultNow(),updatedAt:time('updated_at').notNull().defaultNow()
+},t=>[
+ index('enterprise_template_status_idx').on(t.status,t.updatedAt),index('enterprise_template_creator_idx').on(t.createdBy),check('enterprise_template_status_check',sql`${t.status} in ('Active','Inactive','Archived')`),check('enterprise_template_version_check',sql`${t.currentVersion}>0`),
+ pgPolicy('enterprise_template_read',{for:'select',to:'public',using:contractPlatform}),pgPolicy('enterprise_template_insert',{for:'insert',to:'public',withCheck:sql`${contractPlatform} and ${t.createdBy}=${actor}`}),pgPolicy('enterprise_template_update',{for:'update',to:'public',using:contractPlatform,withCheck:contractPlatform})
+]).enableRLS();
+export const enterpriseContractTemplateVersions=pgTable('enterprise_contract_template_versions',{
+ templateId:text('template_id').notNull().references(()=>enterpriseContractTemplates.id),version:integer('version').notNull(),payload:jsonb('payload').notNull(),createdBy:text('created_by').notNull().references(()=>authUser.id),createdAt:time('created_at').notNull().defaultNow()
+},t=>[
+ primaryKey({columns:[t.templateId,t.version]}),index('enterprise_template_version_creator_idx').on(t.createdBy),check('enterprise_template_revision_check',sql`${t.version}>0`),
+ pgPolicy('enterprise_template_version_read',{for:'select',to:'public',using:contractPlatform}),pgPolicy('enterprise_template_version_append',{for:'insert',to:'public',withCheck:sql`${contractPlatform} and ${t.createdBy}=${actor}`})
+]).enableRLS();
+export const enterpriseContracts=pgTable('enterprise_contracts',{
+ id:text('id').primaryKey(),organizationId:text('organization_id').notNull().references(()=>organizations.id,{onDelete:'cascade'}),templateId:text('template_id'),templateVersion:integer('template_version'),version:integer('version').notNull(),status:text('status').notNull().default('Approved'),kind:text('kind').notNull(),startsAt:time('starts_at').notNull(),endsAt:time('ends_at').notNull(),contractReference:text('contract_reference').notNull(),notes:text('notes').notNull().default(''),features:jsonb('features').notNull(),limits:jsonb('limits').notNull(),createdBy:text('created_by').notNull().references(()=>authUser.id),approvedBy:text('approved_by').notNull().references(()=>authUser.id),approvedAt:time('approved_at').notNull(),createdAt:time('created_at').notNull().defaultNow(),updatedAt:time('updated_at').notNull().defaultNow()
+},t=>[
+ unique('enterprise_contract_org_version_unique').on(t.organizationId,t.version),foreignKey({name:'enterprise_contract_template_version_fk',columns:[t.templateId,t.templateVersion],foreignColumns:[enterpriseContractTemplateVersions.templateId,enterpriseContractTemplateVersions.version]}),check('enterprise_contract_template_pair_check',sql`(${t.templateId} is null and ${t.templateVersion} is null) or (${t.templateId} is not null and ${t.templateVersion} is not null)`),index('enterprise_contract_template_idx').on(t.templateId,t.templateVersion),index('enterprise_contract_active_idx').on(t.organizationId,t.status,t.startsAt,t.endsAt),index('enterprise_contract_creator_idx').on(t.createdBy),index('enterprise_contract_approver_idx').on(t.approvedBy),
+ check('enterprise_contract_status_check',sql`${t.status} in ('Approved','Suspended','Revoked')`),check('enterprise_contract_kind_check',sql`${t.kind} in ('test','production')`),check('enterprise_contract_term_check',sql`${t.endsAt}>${t.startsAt} and ${t.version}>0`),
+ pgPolicy('enterprise_contract_read',{for:'select',to:'public',using:sql`${contractPlatform} or ${companyRead(t.organizationId)} or (${assignedEntitlementRead(t.organizationId)})`}),
+ pgPolicy('enterprise_contract_insert',{for:'insert',to:'public',withCheck:sql`${contractPlatform} and ${t.createdBy}=${actor} and ${t.approvedBy}=${actor} and (${t.kind}='production' or ${testContractAllowed})`}),
+ pgPolicy('enterprise_contract_status_update',{for:'update',to:'public',using:contractPlatform,withCheck:sql`${contractPlatform} and (${t.kind}='production' or ${testContractAllowed})`})
+]).enableRLS();
+export const enterpriseContractProposals=pgTable('enterprise_contract_proposals',{
+ id:text('id').primaryKey(),organizationId:text('organization_id').notNull().references(()=>organizations.id,{onDelete:'cascade'}),baseVersion:integer('base_version').notNull(),payload:jsonb('payload').notNull(),createdBy:text('created_by').notNull().references(()=>authUser.id),expiresAt:time('expires_at').notNull(),approvedAt:time('approved_at'),createdAt:time('created_at').notNull().defaultNow()
+},t=>[
+ index('enterprise_proposal_org_idx').on(t.organizationId,t.createdAt),index('enterprise_proposal_creator_idx').on(t.createdBy),
+ pgPolicy('enterprise_proposal_read',{for:'select',to:'public',using:contractPlatform}),pgPolicy('enterprise_proposal_insert',{for:'insert',to:'public',withCheck:sql`${contractPlatform} and ${t.createdBy}=${actor}`}),pgPolicy('enterprise_proposal_approve',{for:'update',to:'public',using:contractPlatform,withCheck:contractPlatform})
+]).enableRLS();
+export const entitlementUsage=pgTable('entitlement_usage',{
+ id:text('id').primaryKey(),organizationId:text('organization_id').notNull().references(()=>organizations.id,{onDelete:'cascade'}),period:text('period').notNull(),metric:text('metric').notNull(),subjectId:text('subject_id').notNull(),amount:integer('amount').notNull().default(1),createdAt:time('created_at').notNull().defaultNow()
+},t=>[
+ unique('entitlement_usage_subject_unique').on(t.organizationId,t.metric,t.subjectId),index('entitlement_usage_period_idx').on(t.organizationId,t.period,t.metric),check('entitlement_usage_amount_check',sql`${t.amount}>0`),check('entitlement_usage_period_check',sql`${t.period} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+ pgPolicy('entitlement_usage_read',{for:'select',to:'public',using:sql`${companyRead(t.organizationId)} or ${contractPlatform} or (${assignedEntitlementRead(t.organizationId)})`}),
+ pgPolicy('entitlement_usage_append',{for:'insert',to:'public',withCheck:sql`${companyWrite(t.organizationId)} or ${contractPlatform}`})
+]).enableRLS();

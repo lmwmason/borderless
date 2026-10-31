@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {PoolClient} from 'pg';
 import type {AccountUser} from '../organization-contracts';
-import {requireUser} from '../auth';
+import {requireAdmin,isEnabledAdminUser,isAdminManagedUser,listEnabledAdmins} from '../admin/auth';
 import {ApiError} from '../http';
 import {audit,limit,transaction} from '../organizations';
 import {notificationRecord} from '../notifications';
@@ -15,18 +15,25 @@ const Review=z.object({status:z.enum(['In Review','Closed','Rejected']),notes:z.
 const idInput=z.string().min(1).max(160);
 const configuredOperators=()=>[...new Set((process.env.BORDERLESS_PLATFORM_ADMIN_IDS||'').split(',').map(id=>id.trim()).filter(Boolean))];
 export function isPlatformAdmin(user:Pick<AccountUser,'id'>|null|undefined):boolean{return Boolean(user?.id&&configuredOperators().includes(user.id));}
-function assertPlatformAdmin(user:AccountUser){if(!isPlatformAdmin(user))throw new ApiError(403,'PLATFORM_ADMIN_REQUIRED','An explicitly configured platform operator is required. Organization roles do not grant platform inquiry access.');}
+async function eligiblePlatformActor(user:AccountUser){
+ if(await isEnabledAdminUser(user.id))return true;
+ return isPlatformAdmin(user)&&!await isAdminManagedUser(user.id);
+}
+async function assertPlatformAdmin(user:AccountUser){if(!await eligiblePlatformActor(user))throw new ApiError(403,'PLATFORM_ADMIN_REQUIRED','An enabled administrator or trusted internal operator is required. Organization roles do not grant platform inquiry access.');}
 
 /** Server-environment authority only; never invoked from signup or a role body.
  * Startup can call this even for an empty allowlist so the last removal is
  * persisted and audited. Configuration authorship is unknown: audit actor null.
  */
 export async function syncPlatformOperators():Promise<void>{
- const ids=configuredOperators();
+ const admins=await listEnabledAdmins(),adminIds=new Set(admins.map(admin=>admin.id));
+ const legacy=[];
+ for(const id of configuredOperators())if(!await isAdminManagedUser(id))legacy.push(id);
+ const ids=[...new Set([...legacy,...adminIds])];
  await transaction(async client=>{
   await client.query("SELECT set_config('borderless.platform_provisioner','on',true)");
   await client.query("SELECT pg_advisory_xact_lock(hashtext('borderless:platform-operator-allowlist'))");
-  const existing=(await client.query('SELECT user_id,active FROM platform_operator_grants FOR UPDATE')).rows;
+  const existing=(await client.query('SELECT user_id,active,source FROM platform_operator_grants FOR UPDATE')).rows;
   const actual=(await client.query('SELECT id FROM account_public WHERE id=ANY($1::text[])',[ids])).rows.map(row=>row.id as string);
   const wanted=new Set(actual);
   for(const row of existing.filter(row=>row.active&&!wanted.has(row.user_id))){
@@ -40,22 +47,23 @@ export async function syncPlatformOperators():Promise<void>{
    }
   }
   for(const userId of actual){
-   if(existing.some(row=>row.user_id===userId&&row.active))continue;
-   await client.query("INSERT INTO platform_operator_grants(user_id,active,source,provisioned_at,updated_at) VALUES($1,true,'server_environment',now(),now()) ON CONFLICT(user_id) DO UPDATE SET active=true,source='server_environment',revoked_at=NULL,provisioned_at=now(),updated_at=now()",[userId]);
-   await client.query("INSERT INTO audit_logs(id,actor_id,action,detail) VALUES($1,NULL,'platform.allowlist_granted',$2)",[randomUUID(),{userId,source:'server_environment'}]);
+   const source=adminIds.has(userId)?'admin_account':'server_environment';
+   if(existing.some(row=>row.user_id===userId&&row.active&&row.source===source))continue;
+   await client.query("INSERT INTO platform_operator_grants(user_id,active,source,provisioned_at,updated_at) VALUES($1,true,$2,now(),now()) ON CONFLICT(user_id) DO UPDATE SET active=true,source=excluded.source,revoked_at=NULL,provisioned_at=now(),updated_at=now()",[userId,source]);
+   await client.query("INSERT INTO audit_logs(id,actor_id,action,detail) VALUES($1,NULL,'platform.allowlist_granted',$2)",[randomUUID(),{userId,source}]);
   }
  });
 }
 export async function withPlatformActor<T>(user:AccountUser,run:(client:PoolClient)=>Promise<T>):Promise<T>{
- await syncPlatformOperators();assertPlatformAdmin(user);
+ await syncPlatformOperators();await assertPlatformAdmin(user);
  return transaction(async client=>{
-  assertPlatformAdmin(user);
+  await assertPlatformAdmin(user);
   await client.query("SELECT set_config('borderless.user_id',$1,true),set_config('borderless.platform_actor','on',true)",[user.id]);
-  const result=await run(client);assertPlatformAdmin(user);return result;
+  const result=await run(client);await assertPlatformAdmin(user);return result;
  });
 }
 export async function requirePlatformAdmin(request:Request):Promise<AccountUser>{
- const user=await requireUser(request);await syncPlatformOperators();assertPlatformAdmin(user);return user;
+ const user=await requireAdmin(request);await syncPlatformOperators();await assertPlatformAdmin(user);return user;
 }
 const selectInquiry=`SELECT r.id,r.organization_id,
  coalesce(nullif(r.company_snapshot->>'companyName',''),o.name) AS company_name,
@@ -111,7 +119,7 @@ export const inquiryService={
   return withPlatformActor(user,async client=>{
    const row=await inquiry(client,id,true),changes:Record<string,unknown>={};
    if(fields.assigneeId!==undefined&&fields.assigneeId!==null){
-    if(!configuredOperators().includes(fields.assigneeId)||(await client.query('SELECT user_id FROM platform_operator_grants WHERE user_id=$1 AND active',[fields.assigneeId])).rowCount!==1)throw new ApiError(400,'ASSIGNEE_INVALID','Assign inquiries only to a currently configured platform operator.');
+    if(!await eligiblePlatformActor({id:fields.assigneeId,name:'',email:''})||(await client.query('SELECT user_id FROM platform_operator_grants WHERE user_id=$1 AND active',[fields.assigneeId])).rowCount!==1)throw new ApiError(400,'ASSIGNEE_INVALID','Assign inquiries only to a currently configured platform operator.');
    }
    if(fields.salesStatus!==undefined&&fields.salesStatus!==row.sales_status)changes.salesStatus={before:row.sales_status,after:fields.salesStatus};
    if(fields.assigneeId!==undefined&&fields.assigneeId!==row.assignee_id)changes.assigneeId={before:row.assignee_id,after:fields.assigneeId};
@@ -136,7 +144,7 @@ export const inquiryService={
   const value=Review.parse(input);idInput.parse(id);
   // The limiter borrows its own pooled connection. Complete it before holding
   // a platform transaction, including when the full five-client pool is busy.
-  await syncPlatformOperators();assertPlatformAdmin(user);await limit(user.id,'approvals');
+  await syncPlatformOperators();await assertPlatformAdmin(user);await limit(user.id,'approvals');
   return withPlatformActor(user,async client=>{
    const row=await inquiry(client,id,true);
    const allowed=row.status==='Pending'?['In Review','Closed','Rejected']:row.status==='In Review'?['Closed','Rejected']:[];

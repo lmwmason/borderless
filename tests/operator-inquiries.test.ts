@@ -21,8 +21,8 @@ test('operator inquiry inbox requires separate platform allowlist, records human
  try{
   delete process.env.BORDERLESS_PLATFORM_ADMIN_IDS;
   assert.equal(isPlatformAdmin(null),false);assert.equal(isPlatformAdmin(owner.user),false);
-  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries')),code('UNAUTHENTICATED'));
-  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:owner.cookie}})),code('PLATFORM_ADMIN_REQUIRED'));
+  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries')),code('ADMIN_AUTH_REQUIRED'));
+  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:owner.cookie}})),code('ADMIN_AUTH_REQUIRED'));
   await assert.rejects(inquiryService.list(owner.user),code('PLATFORM_ADMIN_REQUIRED'));
   const invitation=await organizationService.createInvite(owner.user,organization.id,{});await organizationService.join(admin.user,invitation.code);
   const pending=(await organizationService.detail(owner.user,organization.id)).requests.find(r=>r.userId===admin.user.id)!;
@@ -30,7 +30,7 @@ test('operator inquiry inbox requires separate platform allowlist, records human
   await assert.rejects(inquiryService.list(admin.user),code('PLATFORM_ADMIN_REQUIRED'));
   process.env.BORDERLESS_PLATFORM_ADMIN_IDS=' '+operator.user.id+' , '+operator.user.id+' ';
   assert.equal(isPlatformAdmin(operator.user),true);
-  assert.equal((await requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:operator.cookie}}))).id,operator.user.id);
+  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:operator.cookie}})),code('ADMIN_AUTH_REQUIRED'),'legacy service allowlist does not authenticate an ordinary browser session');
   let outbound=0;globalThis.fetch=async()=>{outbound++;throw new Error('Inquiry review must not send email or payment requests');};
   await assert.rejects(inquiryService.list(operator.user,{status:"Pending' OR true"}));
   const before=(await getPool().query('SELECT to_jsonb(o) AS organization,to_jsonb(s) AS subscription FROM organizations o JOIN subscriptions s ON s.organization_id=o.id WHERE o.id=$1',[organization.id])).rows[0];
@@ -59,7 +59,7 @@ test('operator inquiry inbox requires separate platform allowlist, records human
   delete process.env.BORDERLESS_PLATFORM_ADMIN_IDS;
   assert.equal(isPlatformAdmin(operator.user),false);
   await assert.rejects(inquiryService.list(operator.user),code('PLATFORM_ADMIN_REQUIRED'));
-  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:operator.cookie}})),code('PLATFORM_ADMIN_REQUIRED'));
+  await assert.rejects(requirePlatformAdmin(new Request(testOrigin()+'/api/admin/inquiries',{headers:{cookie:operator.cookie}})),code('ADMIN_AUTH_REQUIRED'));
  }finally{globalThis.fetch=originalFetch;if(previous===undefined)delete process.env.BORDERLESS_PLATFORM_ADMIN_IDS;else process.env.BORDERLESS_PLATFORM_ADMIN_IDS=previous;}
 });
 
