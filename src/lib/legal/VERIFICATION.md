@@ -57,3 +57,24 @@ deadline also bounds a stalled callback and returns partial results honestly.
 Assessment metrics aggregate model calls, reported latency (measured fallback)
 and actual prompt/completion/total tokens. Missing usage is null, never estimated
 or falsely zero. A failure with unreported usage makes aggregate usage unknown.
+
+
+## Quick screening and resumable job snapshots
+
+quickAssess performs deterministic screening only, makes zero provider requests,
+and reports kind=quick / modelStatus=not_requested. It never labels an intentionally
+unrequested model unavailable. Source freshness and missing-fact questions remain
+enforced.
+
+Deep assess accepts onProgress and signal. It emits an initial snapshot and then
+one after every validated completed issue. Every snapshot is source-checked and
+deep-cloned, uses the final assessment/finding IDs, and remains partial while
+unfinished. Mutating an observer snapshot or its progress list cannot mutate the
+engine state. Observer persistence failures propagate to the job owner.
+
+External cancellation aborts the active provider signal and the wait immediately,
+prevents further queue requests, and returns an honest partial assessment retaining
+validated earlier issue reviews. Unreported token consumption remains unknown.
+The engine deadline independently aborts a timed-out provider request. No
+background-job recovery claim is made here; persistence/recovery belongs to the
+workspace job owner.

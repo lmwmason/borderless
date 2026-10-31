@@ -4,7 +4,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRepository, changedFactKeys} from './index';
-import type {Assessment,Company} from '../contracts';
+import type {Assessment,Company,ReviewJob} from '../contracts';
 const company:Company={id:'company',name:'Test SaaS',homeCountry:'KR',industry:'b2b_saas',targetStates:['California'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()};
 async function setup(fn:(repo:ReturnType<typeof createRepository>,path:string)=>Promise<void>) {
  const dir=await mkdtemp(join(tmpdir(),'borderless-workspace-'));
@@ -74,4 +74,60 @@ test('assessment snapshot validation runs within serialized write to reject stal
  const current=(await repo.getWorkspace()).scenarios[0].company;
  await repo.saveAssessment({...assessment,id:'fresh'},current);
  assert.equal((await repo.getWorkspace()).assessments.length,1);
+}));
+
+const reviewJob=(scenarioId:string,id='job'):ReviewJob=>({id,scenarioId,status:'queued',assessmentId:null,result:null,completedTopics:[],currentTopic:null,createdAt:company.updatedAt,updatedAt:company.updatedAt,error:null});
+const progressAssessment=(scenarioId:string):Assessment=>({id:'deep-assessment',scenarioId,findings:[{id:'stable-employment',scenarioId,topic:'Employment',jurisdiction:'California',status:'not_applicable',summary:'No employees',factKeys:['usEmployees'],missingFacts:[],sourceIds:[],assessedAt:company.updatedAt}],questions:[],coverage:[],limitations:[],partial:true,kind:'deep'});
+test('review progress persists through recreation and upserts stable assessment/task references',()=>setup(async(repo,path)=>{
+ await repo.saveCompany(company);const scenario=(await repo.getWorkspace()).scenarios[0];
+ await repo.createReviewJob(reviewJob(scenario.id),scenario.company);
+ await assert.rejects(repo.createReviewJob(reviewJob(scenario.id,'second'),scenario.company),/Review already running/);
+ const result=progressAssessment(scenario.id);
+ await repo.updateReviewJob('job',{status:'running',result,completedTopics:['Employment'],currentTopic:'Privacy'},scenario.company);
+ const fresh=createRepository(path);assert.equal((await fresh.getReviewJob('job')).completedTopics[0],'Employment');
+ await fresh.createTask({title:'Human review',findingId:'stable-employment',status:'todo',assignee:null,notes:'',evidenceRefs:[]});
+ await fresh.updateReviewJob('job',{status:'completed',result:{...result,partial:false}},scenario.company);
+ const state=await fresh.getWorkspace();assert.equal(state.assessments.length,1);assert.equal(state.tasks[0].findingId,'stable-employment');
+ assert.equal(state.reviewJobs?.[0].status,'completed');
+ await assert.rejects(fresh.updateReviewJob('job',{status:'running',result}),/terminal/);
+ assert.equal((await fresh.getAssessment(result.id)).partial,false);
+}));
+test('orphaned jobs recover as interrupted retaining truthful partial results and terminal state',()=>setup(async(repo)=>{
+ await repo.saveCompany(company);const scenario=(await repo.getWorkspace()).scenarios[0];
+ await repo.createReviewJob(reviewJob(scenario.id),scenario.company);
+ await repo.updateReviewJob('job',{status:'running',result:progressAssessment(scenario.id)},scenario.company);
+ await repo.recoverReviewJobs(['job']);assert.equal((await repo.getReviewJob('job')).status,'running');
+ await repo.recoverReviewJobs([]);const job=await repo.getReviewJob('job');
+ assert.equal(job.status,'interrupted');assert.equal(job.result?.partial,true);assert.match(job.error??'',/restart/);
+ await assert.rejects(repo.updateReviewJob('job',{status:'completed'}),/terminal/);
+ await repo.createReviewJob(reviewJob(scenario.id,'new-job'),scenario.company);
+}));
+test('fact invalidation interrupts active progress and mirrors terminal job results',()=>setup(async(repo)=>{
+ await repo.saveCompany(company);const scenario=(await repo.getWorkspace()).scenarios[0];
+ await repo.createReviewJob(reviewJob(scenario.id),scenario.company);
+ const result=progressAssessment(scenario.id);
+ await repo.updateReviewJob('job',{status:'running',result},scenario.company);
+ await repo.saveCompany({...company,usEmployees:1});
+ const job=await repo.getReviewJob('job');assert.equal(job.status,'interrupted');assert.equal(job.result?.findings[0].status,'review_required');
+ await assert.rejects(repo.updateReviewJob('job',{result},scenario.company),/terminal/);
+ assert.deepEqual((await repo.getReviewJob('job')).result,await repo.getAssessment(result.id));
+ await assert.rejects(repo.createReviewJob(reviewJob(scenario.id,'stale'),scenario.company),/Facts changed/);
+}));
+test('completed job result reflects later relevant fact invalidation and legacy storage accepts absent jobs',()=>setup(async(repo,path)=>{
+ await repo.saveCompany(company);const scenario=(await repo.getWorkspace()).scenarios[0];
+ await repo.createReviewJob(reviewJob(scenario.id),scenario.company);
+ await repo.updateReviewJob('job',{status:'completed',result:{...progressAssessment(scenario.id),partial:false}},scenario.company);
+ await repo.saveCompany({...company,usEmployees:2});
+ assert.equal((await repo.getReviewJob('job')).result?.findings[0].status,'review_required');
+ const legacy=await repo.getWorkspace();delete legacy.reviewJobs;
+ await writeFile(path,JSON.stringify(legacy));
+ assert.deepEqual((await createRepository(path).getWorkspace()).reviewJobs,[]);
+}));
+test('job creation conflict checks are atomic and stale progress cannot overwrite assessment',()=>setup(async(repo,path)=>{
+ await repo.saveCompany(company);const scenario=(await repo.getWorkspace()).scenarios[0];
+ const outcomes=await Promise.allSettled([repo.createReviewJob(reviewJob(scenario.id,'one'),scenario.company),createRepository(path).createReviewJob(reviewJob(scenario.id,'two'),scenario.company)]);
+ assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,1);
+ const winner=(await repo.getWorkspace()).reviewJobs![0];
+ await assert.rejects(repo.updateReviewJob(winner.id,{result:progressAssessment(scenario.id)},{...scenario.company,usEmployees:3}),/Facts changed/);
+ assert.equal((await repo.getWorkspace()).assessments.length,0);
 }));

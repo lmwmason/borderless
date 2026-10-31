@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CompanySchema} from '../src/lib/contracts';
-import type {Assessment,Company,Scenario,Task,Workspace} from '../src/lib/contracts';
+import type {Assessment,Company,Scenario,Task,Workspace,ReviewJob} from '../src/lib/contracts';
 const company:Company={id:'qa-company',name:'QA SaaS',homeCountry:'KR',industry:'b2b_saas',targetStates:['California'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()};
 const request=(path:string,method:string,body:unknown,origin?:string)=>new Request('http://localhost'+path,{method,headers:{'Content-Type':'application/json',...(origin?{origin}: {})},body:JSON.stringify(body)});
 const context=(id:string)=>({params:Promise.resolve({id})});
@@ -16,6 +16,8 @@ test('profile schema rejects malformed facts and accepts explicitly unknown valu
 test('actual route integration: company, scenarios A/B/C, assessment, sourced report and persisted task edits',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'borderless-api-'));
  const oldPath=process.env.BORDERLESS_DATA_PATH,oldKey=process.env.NVIDIA_API_KEY,oldModel=process.env.NVIDIA_MODEL;
+ const realFetch=globalThis.fetch;
+ globalThis.fetch=async()=>{throw new Error('Unexpected outbound request in API QA');};
  process.env.BORDERLESS_DATA_PATH=join(dir,'workspace.json');
  delete process.env.NVIDIA_API_KEY;delete process.env.NVIDIA_MODEL;
  try {
@@ -24,6 +26,9 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  const scenarioRoute=await import('../src/app/api/scenarios/route');
  const assessRoute=await import('../src/app/api/assessments/route');
  const assessmentRoute=await import('../src/app/api/assessments/[id]/route');
+ const reviewsRoute=await import('../src/app/api/reviews/route');
+ const reviewIdRoute=await import('../src/app/api/reviews/[id]/route');
+ const {reviewService}=await import('../src/lib/ai/review-jobs');
  const taskRoute=await import('../src/app/api/tasks/route');
  const taskIdRoute=await import('../src/app/api/tasks/[id]/route');
  const sourceRoute=await import('../src/app/api/sources/[id]/route');
@@ -54,25 +59,40 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
   return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({sourceIds:supplied.sourceIds,questions:[],childTopics:[],review:{proposedStatus:supplied.ruleStatus??'review_required',missingFacts:[],counterexampleFactKeys:[]}})}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}});
  };
  try {
-  const denied=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenarioA.id}));
+  const quick=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenarioA.id}));
+  assert.equal(quick.status,200);const quickResult=await quick.json() as Assessment;
+  assert.equal(quickResult.kind,'quick');assert.equal(quickResult.modelStatus,'not_requested');
+  assert.equal(modelRequests,0,'quick assessment must not send model request even when configured');
+  const denied=await reviewsRoute.POST(request('/api/reviews','POST',{scenarioId:scenarioA.id,consent:false}));
   assert.equal(denied.status,400);assert.equal((await denied.json()).error.code,'CONSENT_REQUIRED');
   assert.equal(modelRequests,0,'missing consent must not send model request');
-  const allowed=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenarioA.id,consent:true}));
-  assert.equal(allowed.status,200);
-  const modelAssessment=await allowed.json() as Assessment;
+  const allowed=await reviewsRoute.POST(request('/api/reviews','POST',{scenarioId:scenarioA.id,consent:true}));
+  assert.equal(allowed.status,202);
+  const accepted=await allowed.json() as ReviewJob;
+  assert.equal(accepted.status,'queued');
+  const completed=await reviewService.wait(accepted.id);
+  assert.ok(['completed','partial'].includes(completed.status));
+  const polled=await reviewIdRoute.GET(new Request('http://localhost/api/reviews/'+accepted.id),context(accepted.id));
+  assert.equal(polled.status,200);assert.equal((await polled.json()).id,accepted.id);
+  const modelAssessment=completed.result!;
+  assert.ok(modelAssessment);assert.equal(modelAssessment.kind,'deep');
   assert.ok(modelRequests>0);
   assert.equal(modelAssessment.modelId,'nvidia/nemotron-3.5-super-vl-120b-a12b');
   assert.equal(modelAssessment.modelStatus,'available');
   assert.ok((modelAssessment.metrics?.totalTokens??0)>0);
  } finally {globalThis.fetch=originalFetch;delete process.env.NVIDIA_API_KEY;}
+ const unavailable=await reviewsRoute.POST(request('/api/reviews','POST',{scenarioId:scenarioA.id,consent:true}));
+ assert.equal(unavailable.status,503);assert.equal((await unavailable.json()).error.code,'NVIDIA_UNAVAILABLE');
+ assert.equal((await reviewIdRoute.GET(new Request('http://localhost/api/reviews/missing'),context('missing'))).status,404);
  const assessments:Assessment[]=[];
  for(const scenario of [scenarioA,scenarioB,scenarioC]){
   const response=await assessRoute.POST(request('/api/assessments','POST',{scenarioId:scenario.id}));
   assert.equal(response.status,200);
   const assessment=await response.json() as Assessment;
-  assert.equal(assessment.partial,true);
-  assert.equal(assessment.modelStatus,'unavailable');
-  assert.match(assessment.limitations.join(' '),/NVIDIA unavailable/);
+  assert.equal(assessment.kind,'quick');
+  assert.equal(assessment.modelStatus,'not_requested');
+  assert.equal(assessment.metrics?.modelCalls,0);
+  assert.match(assessment.limitations.join(' '),/deep review was not requested/);
   assert.ok(assessment.findings.length>0);
   assessments.push(assessment);
  }
@@ -107,6 +127,7 @@ test('actual route integration: company, scenarios A/B/C, assessment, sourced re
  assert.equal((await taskIdRoute.DELETE(new Request('http://localhost/api/tasks/'+task.id,{method:'DELETE'}),context(task.id))).status,200);
  assert.equal((await (await workspaceRoute.GET()).json()).tasks.length,0);
  } finally {
+ globalThis.fetch=realFetch;
  for(const [key,value] of Object.entries({BORDERLESS_DATA_PATH:oldPath,NVIDIA_API_KEY:oldKey,NVIDIA_MODEL:oldModel}))if(value===undefined)delete process.env[key];else process.env[key]=value;
  await rm(dir,{recursive:true,force:true});
  }

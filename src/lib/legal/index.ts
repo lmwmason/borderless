@@ -12,7 +12,8 @@ export type ModelOutput={sourceIds:string[];questions:string[];childTopics:strin
 
 export type LegalModel=(input:ModelInput,signal?:AbortSignal)=>Promise<ModelOutput>;
 export const LIMITS={maxDepth:3,maxNodes:12,maxModelCalls:15,totalTimeoutMs:90000,callTimeoutMs:30000} as const;
-export type AssessOptions={timeoutMs?:number;callTimeoutMs?:number;now?:number};
+export type ReviewProgress={completedTopics:string[];currentTopic:string|null};
+export type AssessOptions={timeoutMs?:number;callTimeoutMs?:number;now?:number;signal?:AbortSignal;onProgress?:(snapshot:Assessment,progress:ReviewProgress)=>void|Promise<void>};
 const Output=z.object({sourceIds:z.array(z.string()).max(12),questions:z.array(z.string().max(500)).max(12),childTopics:z.array(z.string().max(120)).max(12),
  review:z.object({proposedStatus:z.enum(['applicable','not_applicable','insufficient_data','review_required']),missingFacts:z.array(z.string().max(120)).max(50),counterexampleFactKeys:z.array(z.string().max(120)).max(50)}).strict().optional(),
  telemetry:z.object({latencyMs:z.number().finite().nonnegative(),promptTokens:z.number().int().nonnegative().nullable(),completionTokens:z.number().int().nonnegative().nullable(),totalTokens:z.number().int().nonnegative().nullable()}).strict().optional()
@@ -22,22 +23,66 @@ export function issueFingerprint(topic:string,company:Company):string {
  const facts=Object.fromEntries([...keys].sort().map(k=>[k,company[k as keyof Company]]));
  return createHash('sha256').update(JSON.stringify({topic,facts,version:SOURCE_VERSION})).digest('hex');
 }
-function deadline<T>(p:Promise<T>,ms:number,onTimeout:()=>void):Promise<T>{
- return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{onTimeout();reject(new Error('model_timeout'));},ms);p.then(value=>{clearTimeout(timer);resolve(value);},error=>{clearTimeout(timer);reject(error);});});
+function deadline<T>(p:Promise<T>,ms:number,onTimeout:()=>void,signal?:AbortSignal):Promise<T>{
+ return new Promise((resolve,reject)=>{
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const cleanup=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);};
+  const cancel=()=>{cleanup();onTimeout();reject(new Error('review_cancelled'));};
+  p.then(value=>{cleanup();resolve(value);},error=>{cleanup();reject(error);});
+  if(signal?.aborted){cancel();return;}
+  signal?.addEventListener('abort',cancel,{once:true});
+  timer=setTimeout(()=>{cleanup();onTimeout();reject(new Error('model_timeout'));},ms);
+ });
+}
+const BASE_LIMITATIONS=[
+ 'Coverage: selected US federal and California topics only; other jurisdictions and laws are unexamined.',
+ 'Preparation support only. Human legal/tax review is required before commercial reliance or external actions.',
+ 'Task completion is not legal compliance certification. No fees, savings, filings or payments are calculated or performed.'
+];
+function sourceCheckedClone(assessment:Assessment,now:number):Assessment{
+ const clone=structuredClone(assessment);
+ for(const finding of clone.findings){
+  for(const key of finding.missingFacts){
+   const question='Confirm '+key+' for '+finding.topic+'.';
+   if(!clone.questions.includes(question))clone.questions.push(question);
+  }
+  if(finding.sourceIds.some(id=>{const source=getSource(id);return !source||!sourceIsFresh(source,now);})){
+   finding.status='review_required';
+   finding.summary+=' Source verification is stale or unavailable; recheck before relying on this finding.';
+   clone.partial=true;
+  }
+ }
+ return clone;
+}
+export async function quickAssess(company:Company,scenarioId:string):Promise<Assessment>{
+ return sourceCheckedClone({
+  id:randomUUID(),scenarioId,kind:'quick',findings:evaluateRules(company,scenarioId),questions:[],coverage:[...ROOT_TOPICS],
+  limitations:[...BASE_LIMITATIONS,'Quick assessment: deterministic source-based screening only. NVIDIA deep review was not requested.'],
+  partial:false,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,modelStatus:'not_requested',
+  metrics:{nodes:ROOT_TOPICS.length,modelCalls:0,maxDepth:0,latencyMs:0,promptTokens:null,completionTokens:null,totalTokens:null}
+ },Date.now());
 }
 export async function assess(company:Company,scenarioId:string,model?:LegalModel,options:AssessOptions={}):Promise<Assessment>{
  const started=Date.now(), timeout=Math.max(1,Math.min(options.timeoutMs??LIMITS.totalTimeoutMs,LIMITS.totalTimeoutMs));
  const findings:Finding[]=evaluateRules(company,scenarioId), questions=new Set<string>();
- const limitations=['Coverage: selected US federal and California topics only; other jurisdictions and laws are unexamined.',
- 'Preparation support only. Human legal/tax review is required before commercial reliance or external actions.',
- 'Task completion is not legal compliance certification. No fees, savings, filings or payments are calculated or performed.'];
+ const limitations=[...BASE_LIMITATIONS];
+ const assessmentId=randomUUID(),completedTopics:string[]=[];
  let partial=!model,modelCalls=0,maxDepth=0,nodes=0,modelAvailable=false,latencyMs=0;
  const usage:{promptTokens:number|null;completionTokens:number|null;totalTokens:number|null}={promptTokens:0,completionTokens:0,totalTokens:0};
  const factKeysAllowed=new Set([...sources.flatMap(s=>s.requiredFacts),...Object.keys(company),...findings.flatMap(f=>f.missingFacts)]);
 
  const queue=ROOT_TOPICS.map(topic=>({topic,depth:0})),seen=new Set<string>();
  if(!model)limitations.push('NVIDIA unavailable: no model review was performed. Findings below are deterministic source-based screening only.');
+ const snapshot=(unfinished:boolean):Assessment=>sourceCheckedClone({
+  id:assessmentId,scenarioId,kind:'deep',findings,questions:[...questions],coverage:ROOT_TOPICS,
+  limitations:[...new Set(limitations)],partial:unfinished||partial,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,
+  modelStatus:modelAvailable?'available':model&&unfinished?'pending':'unavailable',
+  metrics:{nodes,modelCalls,maxDepth,latencyMs,promptTokens:modelCalls?usage.promptTokens:null,completionTokens:modelCalls?usage.completionTokens:null,totalTokens:modelCalls?usage.totalTokens:null}
+ },options.now??Date.now());
+ const emit=async()=>{if(options.onProgress)await options.onProgress(snapshot(true),{completedTopics:[...completedTopics],currentTopic:null});};
+ await emit();
  while(queue.length && nodes<LIMITS.maxNodes){
+  if(options.signal?.aborted){partial=true;limitations.push('Deep review cancelled; completed validated issue reviews are retained.');break;}
   const node=queue.shift()!,fingerprint=issueFingerprint(node.topic,company);
   if(seen.has(fingerprint))continue;
   seen.add(fingerprint);nodes++;maxDepth=Math.max(maxDepth,node.depth);
@@ -51,7 +96,7 @@ export async function assess(company:Company,scenarioId:string,model?:LegalModel
   let telemetryRecorded=false;
   const current=findings.find(f=>f.topic===node.topic)!;
   try{
-   const output=Output.parse(await deadline(Promise.resolve().then(()=>model({topic:node.topic,facts,sourceIds:TOPIC_SOURCES[node.topic]??[],ruleStatus:current.status,missingFacts:[...current.missingFacts]},callAbort.signal)),Math.max(1,Math.min(options.callTimeoutMs??LIMITS.callTimeoutMs,LIMITS.callTimeoutMs,timeout-(Date.now()-started))),()=>callAbort.abort()));
+   const output=Output.parse(await deadline(Promise.resolve().then(()=>model({topic:node.topic,facts,sourceIds:TOPIC_SOURCES[node.topic]??[],ruleStatus:current.status,missingFacts:[...current.missingFacts]},callAbort.signal)),Math.max(1,Math.min(options.callTimeoutMs??LIMITS.callTimeoutMs,LIMITS.callTimeoutMs,timeout-(Date.now()-started))),()=>callAbort.abort(),options.signal));
    latencyMs+=output.telemetry?.latencyMs??(Date.now()-callStarted);
    for(const key of ['promptTokens','completionTokens','totalTokens'] as const){
     const value=output.telemetry?.[key];
@@ -100,16 +145,14 @@ export async function assess(company:Company,scenarioId:string,model?:LegalModel
     usage.promptTokens=null;usage.completionTokens=null;usage.totalTokens=null;
    }
    partial=true;
-   limitations.push('NVIDIA review unavailable, timed out, or returned unsupported content. The failed issue review was not applied; earlier validated reviews, if any, are retained.');
+   limitations.push(options.signal?.aborted?'Deep review cancelled; completed validated issue reviews are retained.':'NVIDIA review unavailable, timed out, or returned unsupported content. The failed issue review was not applied; earlier validated reviews, if any, are retained.');
    break;
   }
+  completedTopics.push(node.topic);
+  // Observer persistence failures propagate to the job owner, not the model-error path.
+  await emit();
  }
+ if(options.signal?.aborted){partial=true;limitations.push('Deep review cancelled; completed validated issue reviews are retained.');}
  if(queue.length){partial=true;limitations.push(nodes>=LIMITS.maxNodes?'Issue budget reached; additional issues require human review.':'Additional issues were not model-reviewed and require human review.');}
- for(const finding of findings){
-  for(const key of finding.missingFacts)questions.add('Confirm '+key+' for '+finding.topic+'.');
-  if(finding.sourceIds.some(id=>{const source=getSource(id);return !source || !sourceIsFresh(source,options.now??Date.now());})){
-   finding.status='review_required';finding.summary+=' Source verification is stale or unavailable; recheck before relying on this finding.';partial=true;
-  }
- }
- return {id:randomUUID(),scenarioId,findings,questions:[...questions],coverage:ROOT_TOPICS,limitations:[...new Set(limitations)],partial,ruleVersion:RULE_VERSION,sourceVersion:SOURCE_VERSION,modelStatus:modelAvailable?'available':'unavailable',metrics:{nodes,modelCalls,maxDepth,latencyMs,promptTokens:modelCalls?usage.promptTokens:null,completionTokens:modelCalls?usage.completionTokens:null,totalTokens:modelCalls?usage.totalTokens:null}};
+ return snapshot(false);
 }

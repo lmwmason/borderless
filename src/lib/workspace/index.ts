@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { CompanySchema, ScenarioInputSchema, TaskInputSchema } from '../contracts';
-import type { Assessment, Company, Scenario, Task, Workspace } from '../contracts';
+import type { Assessment, Company, Scenario, Task, Workspace, ReviewJob } from '../contracts';
 
 type TaskInput = Omit<Task, 'id' | 'updatedAt'>;
 export interface WorkspaceRepository {
@@ -15,8 +15,12 @@ export interface WorkspaceRepository {
   deleteTask(id: string): Promise<void>;
   saveAssessment(assessment: Assessment, expectedCompany?: Company): Promise<Assessment>;
   getAssessment(id: string): Promise<Assessment>;
+  createReviewJob(job: ReviewJob, expectedCompany: Company): Promise<ReviewJob>;
+  updateReviewJob(id: string, patch: Partial<ReviewJob>, expectedCompany?: Company): Promise<ReviewJob>;
+  getReviewJob(id: string): Promise<ReviewJob>;
+  recoverReviewJobs(activeIds: string[]): Promise<void>;
 }
-const empty = (): Workspace => ({company:null, scenarios:[],tasks:[],activity:[],assessments:[]});
+const empty = (): Workspace => ({company:null, scenarios:[],tasks:[],activity:[],assessments:[],reviewJobs:[]});
 const clone = <T>(value:T):T => structuredClone(value);
 const now = () => new Date().toISOString();
 const queues = new Map<string, Promise<unknown>>();
@@ -26,6 +30,18 @@ export function changedFactKeys(previous: Company, next: Company): string[] {
 }
 function activity(state: Workspace, type:string, message:string) {
   state.activity.push({id:randomUUID(),at:now(),type,message});
+}
+const activeJob = (job:ReviewJob) => job.status==='queued'||job.status==='running';
+function interruptJob(state:Workspace,job:ReviewJob,message:string) {
+  job.status='interrupted';job.error=message;job.updatedAt=now();job.currentTopic=null;
+  if(job.result) {
+    job.result.partial=true;
+    if(!job.result.limitations.includes(message)) job.result.limitations.push(message);
+    const index=state.assessments.findIndex(a=>a.id===job.result!.id);
+    if(index>=0)state.assessments[index]=clone(job.result);
+    else state.assessments.push(clone(job.result));
+  }
+  activity(state,'review.interrupted',message);
 }
 function invalidate(state: Workspace, scenarioId: string, keys: string[]) {
   if (!keys.length) return;
@@ -40,6 +56,12 @@ function invalidate(state: Workspace, scenarioId: string, keys: string[]) {
       finding.summary='Facts changed — reassessment required. '+finding.summary.replace(/^Facts changed — reassessment required\. /,'');
     }
     activity(state,'assessment.invalidated', 'Affected findings require reassessment after '+keys.join(', '));
+  }
+  for(const job of state.reviewJobs??[]) {
+    if(job.scenarioId!==scenarioId)continue;
+    const assessment=state.assessments.find(a=>a.id===job.assessmentId);
+    if(assessment)job.result=clone(assessment);
+    if(activeJob(job)) interruptJob(state,job,'Company facts changed during review; start a new review. Previous results are partial.');
   }
 }
 /** Single-process, single-workspace demo storage. Not multi-tenant or cross-process safe. */
@@ -56,7 +78,8 @@ export function createRepository(filePath: string): WorkspaceRepository {
       const parsed=JSON.parse(await readFile(path,'utf8')) as Workspace;
       if(!parsed || !Array.isArray(parsed.scenarios) || !Array.isArray(parsed.tasks)
         || !Array.isArray(parsed.activity) || !Array.isArray(parsed.assessments)
-        || !('company' in parsed)) throw new Error('Workspace data is invalid; restore from backup.');
+        || !('company' in parsed) || (parsed.reviewJobs!==undefined && !Array.isArray(parsed.reviewJobs))) throw new Error('Workspace data is invalid; restore from backup.');
+      parsed.reviewJobs??=[];
       return parsed;
     } catch(error) {
       if((error as NodeJS.ErrnoException).code==='ENOENT') return empty();
@@ -161,6 +184,66 @@ export function createRepository(filePath: string): WorkspaceRepository {
         state.assessments.push(clone(assessment));
         activity(state,'assessment.created',assessment.partial?'Partial assessment saved; human review required':'Assessment saved; human review required');
         return assessment;
+      });
+    },
+    createReviewJob(job,expectedCompany) {
+      return mutate(state=>{
+        const scenario=state.scenarios.find(s=>s.id===job.scenarioId);
+        if(!scenario)throw new Error('Not found');
+        if(changedFactKeys(expectedCompany,scenario.company).length)throw new Error('Facts changed during assessment; run again');
+        const jobs=state.reviewJobs??=[];
+        if(jobs.some(activeJob))throw new Error('Review already running');
+        if(jobs.some(j=>j.id===job.id))throw new Error('Review job already exists');
+        if(!activeJob(job))throw new Error('New review job must be queued or running');
+        if(job.result && (job.result.scenarioId!==job.scenarioId||job.assessmentId!==job.result.id))throw new Error('Invalid review result');
+        if(job.result)throw new Error('New review job cannot contain results');
+        const created=clone(job);jobs.push(created);
+        activity(state,'review.created','Background review queued');
+        return created;
+      });
+    },
+    updateReviewJob(id,patch,expectedCompany) {
+      return mutate(state=>{
+        const job=(state.reviewJobs??[]).find(j=>j.id===id);
+        if(!job)throw new Error('Not found');
+        if(!activeJob(job))throw new Error('Review job is terminal');
+        const scenario=state.scenarios.find(s=>s.id===job.scenarioId);
+        if(!scenario)throw new Error('Not found');
+        if(expectedCompany&&changedFactKeys(expectedCompany,scenario.company).length)throw new Error('Facts changed during assessment; run again');
+        if((patch.id!==undefined&&patch.id!==id)||(patch.scenarioId!==undefined&&patch.scenarioId!==job.scenarioId))throw new Error('Review identity cannot change');
+        if(job.assessmentId&&patch.assessmentId!==undefined&&patch.assessmentId!==job.assessmentId)throw new Error('Review assessment identity cannot change');
+        const candidate={...job,...clone(patch),id:job.id,scenarioId:job.scenarioId,createdAt:job.createdAt,updatedAt:now()};
+        if(candidate.result) {
+          if(candidate.result.scenarioId!==job.scenarioId)throw new Error('Invalid review result');
+          if(job.assessmentId&&candidate.result.id!==job.assessmentId)throw new Error('Review assessment identity cannot change');
+          if(candidate.assessmentId&&candidate.result.id!==candidate.assessmentId)throw new Error('Invalid review result');
+          candidate.assessmentId=candidate.result.id;
+          if(candidate.status!=='completed'){candidate.result.partial=true;if(candidate.error&&!candidate.result.limitations.includes(candidate.error))candidate.result.limitations.push(candidate.error);}
+          const index=state.assessments.findIndex(a=>a.id===candidate.result!.id);
+          if(index>=0&&state.assessments[index].scenarioId!==job.scenarioId)throw new Error('Invalid review result');
+          if(index<0)state.assessments.push(clone(candidate.result));
+          else state.assessments[index]=clone(candidate.result);
+        }
+        if(candidate.status==='completed'&&(!candidate.result||candidate.result.partial))throw new Error('Completed review requires a complete result');
+        if(!activeJob(candidate))candidate.currentTopic=null;
+        candidate.completedTopics=[...new Set(candidate.completedTopics)];
+        Object.assign(job,candidate);
+        if(!activeJob(job))activity(state,'review.'+job.status,'Background review '+job.status+'; human review remains required');
+        return job;
+      });
+    },
+    getReviewJob(id) {
+      return serialized(async()=>{
+        const job=((await read()).reviewJobs??[]).find(j=>j.id===id);
+        if(!job)throw new Error('Not found');
+        return clone(job);
+      });
+    },
+    recoverReviewJobs(activeIds) {
+      return mutate(state=>{
+        for(const job of state.reviewJobs??[])if(activeJob(job)&&!activeIds.includes(job.id)) {
+          interruptJob(state,job,'Review interrupted by process restart; saved findings are partial. Start a new review to continue.');
+        }
       });
     },
     getAssessment(id) {

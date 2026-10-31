@@ -18,9 +18,8 @@ test('desktop company → assessment → matter task → persistent edit → sce
   const response=await saved;expect(response.status(),await response.text()).toBe(200);
  }
  await expect(page.getByRole('button',{name:'Edit company profile',exact:true})).toBeVisible();
- await page.getByRole('checkbox').check();
- await page.getByRole('button',{name:/^(Run assessment|Reassess scenario)/}).click();
- await expect(page.getByText('NVIDIA analysis unavailable.',{exact:false})).toBeVisible({timeout:30000});
+ await page.getByRole('button',{name:/^Quick Assessment/}).click();
+ await expect(page.getByText('No model was requested. Run Deep Review for additional issue analysis.',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Regulatory Matters',exact:true}).click();
  await expect(page.getByRole('table')).toBeVisible();
  await page.locator('.table-link').first().click();
@@ -51,9 +50,8 @@ test('desktop company → assessment → matter task → persistent edit → sce
  await page.getByRole('button',{name:'Save scenario',exact:true}).click();
  await expect(page.getByRole('dialog')).toHaveCount(0);
  await page.getByRole('button',{name:'Overview',exact:true}).click();
- await page.getByRole('checkbox').check();
- await page.getByRole('button',{name:/^(Run assessment|Reassess scenario)/}).click();
- await expect(page.getByText('NVIDIA analysis unavailable.',{exact:false})).toBeVisible({timeout:30000});
+ await page.getByRole('button',{name:/^Quick Assessment/}).click();
+ await expect(page.getByText('No model was requested. Run Deep Review for additional issue analysis.',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Scenarios',exact:true}).click();
  await page.getByRole('combobox',{name:'Alternative scenario',exact:true}).selectOption({label:'Current company'});
  await expect(page.getByRole('heading',{name:'Changed regulatory matters',exact:true})).toBeVisible();
@@ -80,4 +78,67 @@ test('mobile 375px navigation, responsive canvas and keyboard dialog close',asyn
  await expect(page.getByRole('dialog')).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:'/tmp/borderless-mobile-qa.png',fullPage:true});
+});
+
+test('controlled asynchronous Deep Review shows progress, survives reload and cancels without any real model call',async({page,request})=>{
+ const initial=await (await request.get('/api/workspace')).json();
+ if(!initial.company) {
+  expect((await request.put('/api/company',{data:{id:'qa-deep-browser',name:'Deep Browser QA',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:null,updatedAt:new Date().toISOString()}})).ok()).toBe(true);
+ }
+ const workspace=await (await request.get('/api/workspace')).json();
+ const scenario=workspace.scenarios[0];
+ const checked=await request.post('/api/assessments',{data:{scenarioId:scenario.id}});
+ expect(checked.ok()).toBe(true);
+ const quick=await checked.json();
+ const result={...quick,id:'qa-controlled-assessment',kind:'deep',partial:true,modelStatus:'available',limitations:[...quick.limitations,'Controlled browser-test fixture; no actual inference.']};
+ let job:import('../src/lib/contracts').ReviewJob|null=null;
+ let polls=0,started=0,cancelled=0;
+ await page.route('**/api/workspace',async route=>{
+  const response=await route.fetch();const actual=await response.json();
+  await route.fulfill({json:{...actual,reviewJobs:job?[job]:[],assessments:job?.result?[...actual.assessments.filter((a:{id:string})=>a.id!==result.id),job.result]:actual.assessments}});
+ });
+ await page.route('**/api/reviews',async route=>{
+  expect(route.request().method()).toBe('POST');
+  expect(route.request().postDataJSON()).toEqual({scenarioId:scenario.id,consent:true});
+  started++;
+  const now=new Date().toISOString();
+  job={id:'qa-controlled-job',scenarioId:scenario.id,status:'queued',assessmentId:null,result:null,completedTopics:[],currentTopic:null,createdAt:now,updatedAt:now,error:null};
+  await route.fulfill({status:202,json:job});
+ });
+ await page.route('**/api/reviews/qa-controlled-job',async route=>{
+  expect(job).not.toBeNull();
+  if(route.request().method()==='DELETE'){
+   cancelled++;job={...job!,status:'cancelled',currentTopic:null,updatedAt:new Date().toISOString(),error:'Review cancelled. Completed findings are retained.'};
+  } else {
+   polls++;if(job!.status==='queued'||job!.status==='running')job={...job!,status:'running',result,assessmentId:result.id,completedTopics:['California employment'],currentTopic:'California privacy',updatedAt:new Date().toISOString()};
+  }
+  await route.fulfill({json:job});
+ });
+ await page.goto('/');
+ await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Deep Review',exact:true})).toBeDisabled();
+ await page.getByRole('checkbox').check();
+ await page.getByRole('button',{name:'Deep Review',exact:true}).click();
+ const progress=page.getByRole('region',{name:'Deep Review status',exact:true});
+ await expect(progress).toBeVisible();
+ await expect(progress.getByText('Current topic: California privacy',{exact:true})).toBeVisible({timeout:5000});
+ await expect(progress.getByText('1 topics completed: California employment',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:/^Quick Assessment/})).toBeEnabled();
+ await expect(page.getByRole('button',{name:'Deep Review results',exact:true})).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('button',{name:'Quick results',exact:true}).click();
+ await expect(page.getByText('No model was requested. Run Deep Review for additional issue analysis.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Deep Review results',exact:true}).click();
+ await page.getByRole('button',{name:'Regulatory Matters',exact:true}).click();
+ await expect(page.getByText('Rule screening · Deep Review pending',{exact:true}).first()).toBeVisible();
+ await expect(page.getByText('Deep Review completed',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Overview',exact:true}).click();
+ await page.reload();
+ await expect(page.getByText('Loading workspace…',{exact:true})).toHaveCount(0);
+ await expect(progress.getByText('Current topic: California privacy',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Cancel Deep Review',exact:true}).click();
+ await expect(progress.getByText('Review cancelled. Completed findings are retained.',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Cancel Deep Review',exact:true})).toHaveCount(0);
+ await expect(progress.getByText('Available findings have been retained. Unfinished topics remain unreviewed.',{exact:true})).toBeVisible();
+ expect(started).toBe(1);expect(cancelled).toBe(1);expect(polls).toBeGreaterThan(0);
+ await page.screenshot({path:'/tmp/borderless-deep-review-qa.png',fullPage:true});
 });

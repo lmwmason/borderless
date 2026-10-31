@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type {Company} from '../contracts';
-import {assess,evaluateRules,getSource,issueFingerprint,LIMITS,sources,validateSourceIds} from './index';
+import type {Assessment,Company} from '../contracts';
+import {assess,quickAssess,evaluateRules,getSource,issueFingerprint,LIMITS,sources,validateSourceIds} from './index';
 const base:Company={id:'co',name:'Example',homeCountry:'KR',industry:'b2b_saas',targetStates:['CA'],usEntity:false,usEmployees:0,usOffice:false,salesModel:'remote',customerType:'b2b',annualUsRevenueUsd:null,processesPersonalData:true,updatedAt:'2026-10-31'};
 const finding=(c:Company,t:string)=>evaluateRules(c,'s').find(f=>f.topic===t)!;
 test('A remote / B California hire / C subsidiary produce distinct meaningful results',()=>{
@@ -111,4 +111,67 @@ test('invalid source retains actual reported telemetry but never applies its rev
  assert.equal(a.metrics!.totalTokens,15);assert.equal(a.metrics!.modelCalls,1);
  assert.equal(a.partial,true);assert.equal(a.modelStatus,'unavailable');
  assert.equal(a.findings.find(f=>f.topic==='Federal tax presence')!.status,'review_required');
+});
+
+test('quick assessment is complete deterministic screening without an unavailable claim or model calls',async()=>{
+ const a=await quickAssess(base,'s');
+ assert.equal(a.kind,'quick');assert.equal(a.modelStatus,'not_requested');assert.equal(a.partial,false);
+ assert.equal(a.metrics!.modelCalls,0);assert.equal(a.metrics!.totalTokens,null);
+ assert.ok(!a.limitations.some(l=>/unavailable/i.test(l)));assert.ok(a.limitations.some(l=>l.includes('not requested')));
+});
+test('quick assessment still downgrades stale sources',async()=>{
+ const source=getSource('ca-employer')!,previous=source.reviewedAt;
+ try{source.reviewedAt='2020-01-01';const a=await quickAssess(base,'s');assert.equal(a.partial,true);assert.equal(a.findings.find(f=>f.topic==='California employment')!.status,'review_required');}
+ finally{source.reviewedAt=previous;}
+});
+test('progress emits initial and validated issues with stable IDs, source checks and isolated mutable snapshots',async()=>{
+ const snapshots:Assessment[]=[],completed:string[][]=[];
+ const a=await assess(base,'s',async i=>({sourceIds:i.sourceIds,questions:[],childTopics:[]}),{
+  now:Date.parse('2027-06-01'),
+  onProgress:(snapshot,progress)=>{
+   snapshots.push(structuredClone(snapshot));completed.push([...progress.completedTopics]);
+   snapshot.id='observer-corruption';snapshot.findings[0].summary='corrupt';snapshot.findings[0].sourceIds.push('fake');
+   snapshot.questions.push('corrupt');progress.completedTopics.push('fake');
+  }
+ });
+ assert.equal(snapshots.length,7);assert.deepEqual(completed.map(c=>c.length),[0,1,2,3,4,5,6]);
+ for(const snap of snapshots){
+  assert.equal(snap.id,a.id);assert.equal(snap.kind,'deep');assert.equal(snap.partial,true);
+  assert.deepEqual(snap.findings.map(f=>f.id),a.findings.map(f=>f.id));
+  assert.ok(snap.findings.every(f=>f.status==='review_required'));
+  assert.ok(!snap.findings.some(f=>f.sourceIds.includes('fake')));
+ }
+ assert.ok(!a.questions.includes('corrupt'));assert.ok(!a.findings[0].sourceIds.includes('fake'));
+});
+test('invalid issue output is never marked completed in progress',async()=>{
+ const completed:string[][]=[];
+ const a=await assess(base,'s',async()=>({sourceIds:['fake'],questions:[],childTopics:[]}),{onProgress:(_a,p)=>{completed.push(p.completedTopics);}});
+ assert.equal(a.partial,true);assert.deepEqual(completed,[[]]);
+});
+test('external cancellation aborts provider immediately and stops queued issues',async()=>{
+ const controller=new AbortController();let calls=0,observedAbort=false;
+ const a=await assess(base,'s',async(_input,signal)=>{
+  calls++;
+  return new Promise((_resolve,reject)=>{signal!.addEventListener('abort',()=>{observedAbort=true;reject(new Error('aborted'));},{once:true});setTimeout(()=>controller.abort(),5);});
+ },{signal:controller.signal});
+ assert.equal(calls,1);assert.equal(observedAbort,true);assert.equal(a.partial,true);
+ assert.equal(a.metrics!.totalTokens,null);assert.ok(a.limitations.some(l=>l.includes('cancelled')));
+});
+test('pre-cancelled review makes no model request',async()=>{
+ const controller=new AbortController();controller.abort();let calls=0;
+ const a=await assess(base,'s',async()=>{calls++;return {sourceIds:[],questions:[],childTopics:[]};},{signal:controller.signal});
+ assert.equal(calls,0);assert.equal(a.metrics!.modelCalls,0);assert.equal(a.partial,true);
+});
+test('progress persistence failures propagate and are not swallowed as NVIDIA failure',async()=>{
+ let callbacks=0;
+ await assert.rejects(assess(base,'s',async i=>({sourceIds:i.sourceIds,questions:[],childTopics:[]}),{onProgress:()=>{if(++callbacks===2)throw new Error('storage unavailable');}}),/storage unavailable/);
+ assert.equal(callbacks,2);
+});
+
+test('cancellation during final progress persistence is still returned as cancelled partial review',async()=>{
+ const controller=new AbortController();
+ const a=await assess(base,'s',async i=>({sourceIds:i.sourceIds,questions:[],childTopics:[]}),{
+  signal:controller.signal,onProgress:(_snapshot,progress)=>{if(progress.completedTopics.length===6)controller.abort();}
+ });
+ assert.equal(a.partial,true);assert.ok(a.limitations.some(l=>l.includes('cancelled')));assert.equal(a.metrics!.modelCalls,6);
 });
