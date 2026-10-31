@@ -1,3 +1,3 @@
-import {z} from 'zod';import {projectReviewService} from '@/lib/ai/review-jobs';import {requireProject} from '@/lib/organizations';import {handle,readBody} from '@/lib/http';
+import {z} from 'zod';import {projectReviewService} from '@/lib/ai/review-jobs';import {requireProjectFeature} from '@/lib/feature-access';import {handle,readBody} from '@/lib/http';
 const Input=z.object({scenarioId:z.string().min(1),consent:z.boolean()}).strict();
-export async function POST(req:Request){const response=await handle(async()=>{const scope=await requireProject(req,true);const input=Input.parse(await readBody(req));return projectReviewService(scope).start(input.scenarioId,input.consent);});if(response.ok)return new Response(response.body,{status:202,headers:response.headers});return response;}
+export async function POST(req:Request){const response=await handle(async()=>{const scope=await requireProjectFeature(req,'deep_legal_review',true);const input=Input.parse(await readBody(req));return projectReviewService(scope).start(input.scenarioId,input.consent);});if(response.ok)return new Response(response.body,{status:202,headers:response.headers});return response;}

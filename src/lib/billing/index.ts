@@ -28,6 +28,10 @@ export const billingService={
   return transaction(async client=>{
    const org=await organizationAccess(client,user.id,orgId,{admin:true,lock:true});
    const existing=(await client.query('SELECT status FROM subscriptions WHERE organization_id=$1',[orgId])).rows[0];
+   if(org.plan==='Enterprise'&&plan!=='Enterprise'){
+    await client.query("SELECT set_config('borderless.user_id',$1,true),set_config('borderless.organization_id',$2,true)",[user.id,orgId]);
+    if((await client.query('SELECT id FROM enterprise_contracts WHERE organization_id=$1 LIMIT 1',[orgId])).rowCount)throw new ApiError(409,'HUMAN_REVIEW_REQUIRED','An organization with Enterprise contract history requires platform review before changing its plan.');
+   }
    if(org.plan!==plan||!['Pending','Active'].includes(existing?.status)){
     // A plan request never manufactures a verified paid entitlement.
     await client.query("UPDATE organizations SET plan=$1,status='Draft' WHERE id=$2",[plan,orgId]);

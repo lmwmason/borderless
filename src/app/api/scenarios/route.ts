@@ -1,2 +1,2 @@
-import {createProjectRepository} from '@/lib/workspace/postgres';import {requireProject} from '@/lib/organizations';import {ScenarioInputSchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
-export async function POST(req:Request){return handle(async()=>{const scope=await requireProject(req,true);return createProjectRepository(scope).createScenario(ScenarioInputSchema.parse(await readBody(req)));})}
+import {createProjectRepository} from '@/lib/workspace/postgres';import {requireProjectFeature} from '@/lib/feature-access';import {ScenarioInputSchema} from '@/lib/contracts';import {handle,readBody} from '@/lib/http';
+export async function POST(req:Request){return handle(async()=>{const scope=await requireProjectFeature(req,'scenario_comparison',true);return createProjectRepository(scope).createScenario(ScenarioInputSchema.parse(await readBody(req)));})}

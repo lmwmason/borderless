@@ -5,6 +5,7 @@ import {createProjectRepository,type ProjectScope} from '../workspace/postgres';
 import {assess,type LegalModel} from '../legal';
 import {NVIDIA_MODEL,nvidiaModel,isNvidiaConfigured} from './nvidia';
 import {ApiError} from '../http';
+import {assertProjectFeature} from '../feature-access';
 type Running={controller:AbortController;done?:Promise<void>};
 type State=Map<string,Running>;
 const active=(job:ReviewJob)=>job.status==='queued'||job.status==='running';
@@ -61,4 +62,7 @@ export function createReviewService(repo:WorkspaceRepository,model:LegalModel=nv
 const globals=globalThis as typeof globalThis&{borderlessReviews?:State};
 const state=globals.borderlessReviews??=new Map();
 
-export function projectReviewService(scope:ProjectScope){return createReviewService(createProjectRepository(scope),nvidiaModel,isNvidiaConfigured,state,scope.role!=='Viewer');}
+export function projectReviewService(scope:ProjectScope){
+ const model:LegalModel=async(input,signal)=>{await assertProjectFeature(scope,'deep_legal_review');return nvidiaModel(input,signal);};
+ return createReviewService(createProjectRepository(scope),model,isNvidiaConfigured,state,scope.role!=='Viewer');
+}

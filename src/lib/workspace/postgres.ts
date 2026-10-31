@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {getPool} from '../db';
 import {authorizeProject} from '../organizations';
+import {assertFeature,reserveDeepReview} from '../entitlements';
 import type {Workspace} from '../contracts';
 import {createRepository,type WorkspaceStore} from './index';
 export type ProjectScope={user:{id:string;name:string;email:string};organizationId:string;projectId:string;role:string};
@@ -12,7 +13,7 @@ async function transaction<T>(scope:ProjectScope,write:boolean,run:(client:PoolC
   await client.query('BEGIN');
   const actual=await authorizeProject(scope.user.id,scope.projectId,write,client);
   if(actual.organizationId!==scope.organizationId)throw new (await import('../http')).ApiError(403,'FORBIDDEN','Project scope mismatch.');
-  await client.query("SELECT set_config('borderless.organization_id',$1,true),set_config('borderless.project_id',$2,true)",[scope.organizationId,scope.projectId]);
+  await client.query("SELECT set_config('borderless.organization_id',$1,true),set_config('borderless.project_id',$2,true),set_config('borderless.user_id',$3,true)",[scope.organizationId,scope.projectId,scope.user.id]);
   // Serialize whole-workspace transitions across server processes.
   await client.query('SELECT id FROM projects WHERE id=$1 AND organization_id=$2 FOR UPDATE',[scope.projectId,scope.organizationId]);
   const result=await run(client);await client.query('COMMIT');return result;
@@ -37,9 +38,11 @@ export function createProjectRepository(scope:ProjectScope){
  const store:WorkspaceStore={
   read:()=>transaction(scope,false,client=>read(client,scope)),
   mutate:fn=>transaction(scope,true,async client=>{
-   const state=await read(client,scope),before=JSON.stringify(state),oldEvents=new Set(state.activity.map(a=>a.id));
+   const state=await read(client,scope),before=JSON.stringify(state),oldEvents=new Set(state.activity.map(a=>a.id)),oldJobs=new Set((state.reviewJobs||[]).map(job=>job.id)),oldScenarios=new Set(state.scenarios.map(scenario=>scenario.id));
    const result=fn(state);
    if(JSON.stringify(state)!==before){
+    for(const job of (state.reviewJobs||[]).filter(job=>!oldJobs.has(job.id)))await reserveDeepReview(client,scope.organizationId,job.id);
+    if(oldScenarios.size&&state.scenarios.some(scenario=>!oldScenarios.has(scenario.id)))await assertFeature(client,scope.organizationId,'scenario_comparison');
     for(const [key,table] of Object.entries(tables)){
      const rows=key==='company'?(state.company?[state.company]:[]):state[key as keyof typeof tables] as {id:string}[];
      await writeRows(client,scope,table,rows??[]);

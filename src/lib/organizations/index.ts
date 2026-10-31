@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {getPool} from '../db';
 import {requireUser} from '../auth';
 import {ApiError} from '../http';
+import {assertCapacity} from '../entitlements';
 import type {AccountUser,Role,OrganizationSummary,OrganizationDetail,AccountOverview,ProjectSummary} from '../organization-contracts';
 export type QueryClient=Pick<PoolClient,'query'>;
 export const uuid=()=>randomUUID();
@@ -132,6 +133,7 @@ export const organizationService={
    if(!request||request.status!=='Pending')throw new ApiError(409,'REQUEST_UNAVAILABLE','Pending join request not found.');
    const member=(await client.query("SELECT id,role FROM memberships WHERE organization_id=$1 AND user_id=$2 FOR UPDATE",[orgId,request.user_id])).rows[0];
    if(!member||member.role!=='Pending')throw new ApiError(409,'REQUEST_UNAVAILABLE','Membership request is no longer pending.');
+   if(decision==='approve'){await client.query("SELECT set_config('borderless.organization_id',$1,true),set_config('borderless.user_id',$2,true)",[orgId,user.id]);await assertCapacity(client,orgId,'members');}
    await client.query("UPDATE join_requests SET status=$1,decided_at=now() WHERE id=$2",[decision==='approve'?'Approved':'Rejected',id]);
    if(decision==='approve')await client.query("UPDATE memberships SET role=$1 WHERE id=$2",[role,member.id]);
    await audit(client,user.id,orgId,'membership.'+decision,{requestId:id,memberId:member.id,role:decision==='approve'?role:'Pending'});
@@ -154,6 +156,7 @@ export const organizationService={
   const name=nameInput.parse(input.name),description=z.string().max(2000).parse(input.description??'');
   return transaction(async client=>{
    const org=await organizationAccess(client,user.id,orgId,{active:true,write:true,lock:true});
+   await client.query("SELECT set_config('borderless.organization_id',$1,true),set_config('borderless.user_id',$2,true)",[orgId,user.id]);await assertCapacity(client,orgId,'projects');
    const project=(await client.query("INSERT INTO projects(id,organization_id,workspace_id,name,description,created_at) VALUES($1,$2,$3,$4,$5,now()) RETURNING *",[uuid(),orgId,org.workspaceId,name,description])).rows[0];
    await audit(client,user.id,orgId,'project.created',{name},project.id);return projectMap(project,org.role);
   });

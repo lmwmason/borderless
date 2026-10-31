@@ -1,3 +1,4 @@
+import {assertFeature} from '../entitlements';
 import {randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {z} from 'zod';
@@ -75,6 +76,12 @@ async function replaceResources(client:PoolClient,e:Engagement,resources:{kind:S
  e.resources=resources.map(({kind,id})=>({kind,id}));
 }
 
+async function entitlement(client:PoolClient,organizationId:string,feature:'expert_marketplace'|'expert_collaboration',engagementId=''){
+ await client.query("SELECT set_config('borderless.organization_id',$1,true)",[organizationId]);
+ if(engagementId)await client.query("SELECT set_config('borderless.entitlement_read_org',$1,true),set_config('borderless.entitlement_read_engagement',$2,true)",[organizationId,engagementId]);
+ await assertFeature(client,organizationId,feature);
+}
+
 export const engagementService={
  async list(user:AccountUser,input:{projectId?:string}={}){
   return withExpertActor(user,async client=>{
@@ -86,6 +93,7 @@ export const engagementService={
   const value=z.object({projectId:idInput,expertId:idInput,serviceId:idInput,title:z.string().trim().min(1).max(200),description:z.string().trim().min(1).max(12000),resources:resourcesInput}).strict().parse(input);
   return withExpertActor(user,async client=>{
    const {scope,resources}=await snapshots(client,user,value.projectId,value.resources);
+   await entitlement(client,scope.organizationId,'expert_marketplace');
    const target=await availableTarget(client,value.expertId,value.serviceId);
    if(target.user_id===user.id)throw new ApiError(409,'SELF_ENGAGEMENT','An expert cannot engage themselves as the requesting company.');
    const now=new Date().toISOString();
@@ -100,6 +108,7 @@ export const engagementService={
   const value=actionInput.parse(input),reviewer=value.action==='activate';
   return withExpertActor(user,async client=>{
    const access=await load(client,user,id,true,reviewer),e=access.engagement,from=e.status;
+   if(!['cancel','decline','revoke'].includes(value.action))await entitlement(client,e.organizationId,value.action==='submit'?'expert_marketplace':'expert_collaboration',e.id);
    let action='';let extra:Record<string,unknown>=value.notes?{notes:value.notes}:{};
    switch(value.action){
     case 'submit':{
@@ -158,6 +167,7 @@ export const engagementService={
  async workspace(user:AccountUser,id:string){
   return withExpertActor(user,async client=>{
    const access=await load(client,user,id),e=access.engagement;
+   await entitlement(client,e.organizationId,'expert_collaboration',e.id);
    if(!['Active','Completed'].includes(e.status))throw new ApiError(403,'CONTRACT_REQUIRED','Collaboration workspace access begins only after confirmed contract activation.');
    if(access.side==='expert')await activeExpert(client,access);
    const resources=(await client.query('SELECT resource_kind,resource_id,payload FROM engagement_resources WHERE engagement_id=$1 ORDER BY created_at,id',[id])).rows.map(row=>({kind:row.resource_kind,id:row.resource_id,snapshot:row.payload}));
@@ -169,7 +179,8 @@ export const engagementService={
  async addEntry(user:AccountUser,id:string,input:{kind:CollaborationEntry['kind'];body:string;assigneeId?:string|null;status?:CollaborationEntry['status']}){
   const value=z.object({kind:z.enum(['message','information_request','expert_opinion','task']),body:z.string().trim().min(1).max(20000),assigneeId:idInput.nullable().optional(),status:z.enum(['open','in_progress','done']).optional()}).strict().parse(input);
   return withExpertActor(user,async client=>{
-   const access=await load(client,user,id,true),e=access.engagement;status(access,['Active']);
+   const access=await load(client,user,id,true),e=access.engagement;
+   await entitlement(client,e.organizationId,'expert_collaboration',e.id);status(access,['Active']);
    if(access.side==='expert')await activeExpert(client,access);else company(access);
    if(value.kind==='expert_opinion')expert(access);
    if(value.assigneeId&&value.assigneeId!==e.expertUserId){
@@ -184,7 +195,8 @@ export const engagementService={
  async updateEntry(user:AccountUser,id:string,entryId:string,input:{status:CollaborationEntry['status']}){
   const value=z.object({status:z.enum(['open','in_progress','done'])}).strict().parse(input);
   return withExpertActor(user,async client=>{
-   const access=await load(client,user,id,true),e=access.engagement;status(access,['Active']);
+   const access=await load(client,user,id,true),e=access.engagement;
+   await entitlement(client,e.organizationId,'expert_collaboration',e.id);status(access,['Active']);
    if(access.side==='expert')await activeExpert(client,access);else company(access);
    const row=(await client.query('SELECT payload,kind FROM engagement_entries WHERE id=$1 AND engagement_id=$2',[idInput.parse(entryId),id])).rows[0];
    if(!row)throw new ApiError(404,'NOT_FOUND','Collaboration entry not found.');
