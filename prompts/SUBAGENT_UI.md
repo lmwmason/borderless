@@ -1,0 +1,2 @@
+# UI subagent
+Own only pages/components/styles assigned in AGENTS.md. Implement functional responsive Quiet Enterprise screens per DESIGN.md and PRD.md. Consume frozen shared types and API contracts; do not edit API routes or package manifests. Support loading, empty, failure, missing-data and persisted task states. Use fixture data only while API integration is pending, then remove fixture from production flow. Report files, exports, blockers and tests.

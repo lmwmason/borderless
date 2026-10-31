@@ -1,0 +1,2 @@
+# Legal engine subagent
+Own only src/lib/legal/**. Implement curated source registry, typed rule evaluation, bounded recursive issue planner, missing-fact questions, exception/challenge checks and explicit applicability statuses. Do not invent statutes, thresholds, citations or source URLs. Verify official sources before marking verified. Never mark unknown facts as non-applicable. Provide scenario A/B/C fixtures, unit tests in owned area or test instructions to QA, and clear exports to orchestrator.
