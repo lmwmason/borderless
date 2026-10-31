@@ -1,3 +1,14 @@
+# Current release gates — 2026-10-31
+
+- Korean/English routes use next-intl with locale cookies and authenticated PostgreSQL preferences. Existing page URLs redirect; API URLs remain unprefixed.
+- Migrations0025/0026 add preferences and expert geographic/bilingual fields non-destructively. Public directory projection removes private credentials, resume/portfolio data and private multilingual portfolio descriptions.
+- Pricing comparison reads the shared server entitlement presets; cards, payment destinations and activation rules remain unchanged. Enterprise overrides require an approved active contract.
+- Set independent strong production administrator credentials and BORDERLESS_ADMIN_AUTH_SECRET through the trusted provisioning procedure. Local demo identities and test contracts are rejected in production.
+- Local validation:154/154 automated cases,19/19 browser cases (full18 plus corrected-fixture targeted1), typecheck and production build passed. No live external payment, Slack or NVIDIA calls were made in this wave. Refer to the latest QA_REPORT.md section for exact execution evidence.
+- AXHub image rebuild, production secrets, runtime resources, egress and backup/restore verification remain pending explicit deployment approval. Earlier container evidence below predates this UI release.
+
+---
+
 # Release readiness — local verification only
 
 ## Prepared
